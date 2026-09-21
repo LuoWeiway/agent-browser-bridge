@@ -9,7 +9,7 @@
  * 4. 深度 DOM + Iframe 递归提取成结构化 Markdown
  */
 
-const CODEX_GROUP_TITLE = 'Codex 任务';
+const CODEX_GROUP_TITLE = 'Agent 任务';
 let directSocket = null;
 let reconnectTimer = null;
 
@@ -133,6 +133,10 @@ async function handleCommand(action, params = {}) {
       case 'navigate':
       case 'open':
         return await navigateTab(query, params?.url, params?.active);
+      case 'close':
+        return await closeTab(query, params?.tabId);
+      case 'clean':
+        return await cleanAgentGroup();
       default:
         return { error: '未知指令: ' + action };
     }
@@ -317,6 +321,17 @@ async function readTabContent(query, full = false) {
           .filter(t => t.length > 0 && t.length < 30)
           .slice(0, 20);
 
+        // 提取主要可点击导航/操作链接
+        const links = Array.from(document.querySelectorAll('a[href]'))
+          .map(a => {
+            const text = (a.innerText || '').replace(/\s+/g, ' ').trim();
+            const href = a.getAttribute('href') || '';
+            if (!text || text.length > 60 || href.startsWith('javascript:') || href === '#') return null;
+            return `[${text}](${href})`;
+          })
+          .filter(Boolean)
+          .slice(0, 25);
+
         const tables = Array.from(document.querySelectorAll('table')).slice(0, 5).map(tbl => {
           const rows = Array.from(tbl.querySelectorAll('tr')).slice(0, 40);
           if (rows.length === 0) return '';
@@ -348,6 +363,7 @@ async function readTabContent(query, full = false) {
           headings,
           inputs,
           buttons,
+          links,
           tables,
           bodyText: bodyText.slice(0, 25000)
         };
@@ -371,6 +387,9 @@ async function readTabContent(query, full = false) {
       }
       if (topFrame.buttons && topFrame.buttons.length > 0) {
         output += `### 交互按钮\n${topFrame.buttons.map(b => '`' + b + '`').join('  ')}\n\n`;
+      }
+      if (topFrame.links && topFrame.links.length > 0) {
+        output += `### 页面关键链接\n${topFrame.links.map(l => '- ' + l).join('\n')}\n\n`;
       }
       if (topFrame.tables && topFrame.tables.length > 0) {
         output += `### 数据表格\n${topFrame.tables.join('\n\n')}\n\n`;
@@ -437,7 +456,10 @@ async function clickElement(query, selector) {
         el.focus();
 
         const opts = { bubbles: true, cancelable: true, view: window };
+        // 派发 PointerEvents 与 MouseEvents，兼顾 React 18+ / Vue 3 / 原生前端交互
+        try { el.dispatchEvent(new PointerEvent('pointerdown', opts)); } catch (e) {}
         el.dispatchEvent(new MouseEvent('mousedown', opts));
+        try { el.dispatchEvent(new PointerEvent('pointerup', opts)); } catch (e) {}
         el.dispatchEvent(new MouseEvent('mouseup', opts));
         el.click();
 
@@ -473,7 +495,15 @@ async function fillElement(query, selector, value) {
 
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
         el.focus();
-        el.value = val;
+
+        // 兼容 React 16/17/18+ 受控组件及原生 Input/Textarea Setter
+        const prototype = el instanceof HTMLTextAreaElement ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+        const nativeSetter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
+        if (nativeSetter) {
+          nativeSetter.call(el, val);
+        } else {
+          el.value = val;
+        }
 
         el.dispatchEvent(new Event('input', { bubbles: true }));
         el.dispatchEvent(new Event('change', { bubbles: true }));
@@ -591,4 +621,45 @@ async function navigateTab(query, url, isActive = false) {
     action: 'created_in_group',
     group: CODEX_GROUP_TITLE
   };
+}
+
+/**
+ * 关闭指定标签页
+ */
+async function closeTab(query, tabId) {
+  let targetId = tabId;
+  if (!targetId && query) {
+    const matched = await getBestTab(query, false);
+    if (matched && matched.id) targetId = matched.id;
+  }
+  if (!targetId) return { error: '未找到要关闭的标签页: ' + query };
+
+  await chrome.tabs.remove(targetId);
+  return { success: true, closedTabId: targetId };
+}
+
+/**
+ * 一键清理所有 Agent 任务分组中的后台标签页
+ */
+async function cleanAgentGroup() {
+  if (!chrome.tabGroups) return { error: '当前浏览器环境不支持 tabGroups' };
+  try {
+    const groups = await chrome.tabGroups.query({ title: CODEX_GROUP_TITLE });
+    if (!groups || groups.length === 0) {
+      return { success: true, message: '当前没有打开的 Agent 任务分组' };
+    }
+
+    let closed = 0;
+    for (const g of groups) {
+      const tabs = await chrome.tabs.query({ groupId: g.id });
+      const ids = tabs.map(t => t.id).filter(Boolean);
+      if (ids.length > 0) {
+        await chrome.tabs.remove(ids);
+        closed += ids.length;
+      }
+    }
+    return { success: true, closedCount: closed, groupTitle: CODEX_GROUP_TITLE };
+  } catch (err) {
+    return { error: '清理分组异常: ' + err.message };
+  }
 }

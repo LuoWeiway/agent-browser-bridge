@@ -118,6 +118,12 @@ node server.js shot "禅道" ./screenshot.png
 
 # 8. 在目标页面上下文中执行自定义 JavaScript
 node server.js eval "document.title" "禅道"
+
+# 9. 关闭指定的标签页
+node server.js close "21005"
+
+# 10. 一键清理并关闭所有 Agent 任务分组中的后台临时标签页
+node server.js clean
 ```
 
 ---
@@ -130,14 +136,17 @@ node server.js eval "document.title" "禅道"
 - 🗣️ *“读取一下水稳看板当前展示的生产批次数据”*
 - 🗣️ *“帮我在打开的工单页面点击‘审核通过’按钮，把操作结果截个图给我”*
 - 🗣️ *“帮我查一下当前浏览器打开了哪些标签页”*
+- 🗣️ *“把刚才打开的 Agent 任务页面全部清理关闭”*
 
 Claude 会智能调用背后的工具集：
-- `browser_read`：模糊定位并结构化提取网页数据（含子 iframe 与表格）
+- `browser_read`：模糊定位并结构化提取网页数据（含子 iframe、表格与关键链接）
 - `browser_list_tabs`：获取当前所有标签页清单
-- `browser_click`：点击指定选择器或文本按钮
-- `browser_fill`：输入表单项
+- `browser_click`：点击指定选择器或文本按钮（支持 Pointer/Mouse 复合事件）
+- `browser_fill`：输入表单项（深度适配 React/Vue 受控组件）
 - `browser_screenshot`：网页截图存盘
-- `browser_navigate`：后台任务分组中打开或跳转新链接
+- `browser_navigate`：在专属「Agent 任务」分组中后台静默打开新链接
+- `browser_close_tab`：关闭指定标签页
+- `browser_clean_group`：一键关闭清理所有 Agent 任务标签
 - `browser_eval`：执行页面控制台脚本
 
 ---

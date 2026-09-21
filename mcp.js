@@ -151,6 +151,28 @@ const TOOLS = [
       },
       required: ['expression']
     }
+  },
+  {
+    name: 'browser_close_tab',
+    description: '关闭指定匹配的 Chrome 标签页',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: '要关闭的标签页关键词或 URL'
+        }
+      },
+      required: ['query']
+    }
+  },
+  {
+    name: 'browser_clean_group',
+    description: '一键清理并关闭所有 Agent 任务分组（Agent 任务）中的后台临时标签页',
+    inputSchema: {
+      type: 'object',
+      properties: {}
+    }
   }
 ];
 
@@ -225,6 +247,16 @@ async function handleToolCall(name, args = {}) {
 
     case 'browser_eval': {
       const res = await callApi('eval', { expression: args.expression, query: args.query || '' });
+      return { content: [{ type: 'text', text: JSON.stringify(res, null, 2) }] };
+    }
+
+    case 'browser_close_tab': {
+      const res = await callApi('close', { query: args.query });
+      return { content: [{ type: 'text', text: JSON.stringify(res, null, 2) }], isError: !res.success };
+    }
+
+    case 'browser_clean_group': {
+      const res = await callApi('clean');
       return { content: [{ type: 'text', text: JSON.stringify(res, null, 2) }] };
     }
 

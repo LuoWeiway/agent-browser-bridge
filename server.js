@@ -445,6 +445,23 @@ async function runCli() {
         break;
       }
 
+      case 'close': {
+        const query = args[1];
+        if (!query) {
+          console.error('用法: node server.js close <关键词或URL>');
+          process.exit(1);
+        }
+        const res = await callApi('close', { query });
+        console.log(JSON.stringify(res, null, 2));
+        break;
+      }
+
+      case 'clean': {
+        const res = await callApi('clean');
+        console.log(JSON.stringify(res, null, 2));
+        break;
+      }
+
       case 'help':
       default:
         console.log(`
@@ -453,12 +470,14 @@ Agent Browser Bridge CLI - 类似 OpenAI Codex 的真实浏览器控制与读取
 常用指令:
   node server.js list                             列出当前浏览器所有打开的标签页
   node server.js read [url或标题关键词]            智能匹配标签并读取 Markdown 内容 (含 iframe)
+  node server.js open <URL>                       在专属「Agent 任务」分组中后台静默打开新页面
   node server.js click <selector或文本> [关键词]   在目标页面点击元素 (例如 text=确定 或 #btn)
   node server.js fill <selector> <值> [关键词]     在目标页面的输入框填写内容
   node server.js scroll [down|up|top|bottom]      页面滚动
   node server.js shot [关键词] [输出图片路径]      截取目标网页快照保存为 PNG
-  node server.js nav <URL> [关键词]               跳转网页或打开新标签
   node server.js eval <js代码> [关键词]            在目标页面中执行 JavaScript
+  node server.js close <关键词或URL>              关闭匹配的标签页
+  node server.js clean                            一键清理所有 Agent 任务分组中的标签页
   node server.js --server                         前台启动守护服务并查看日志
 `);
         break;
