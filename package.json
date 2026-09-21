@@ -1,11 +1,11 @@
 {
-  "name": "codex-browser-bridge",
+  "name": "agent-browser-bridge",
   "version": "2.1.0",
-  "description": "OpenAI Codex-style Chrome browser control and inspection bridge with Tab Groups isolation for CLI and Claude Code MCP",
+  "description": "Codex-style Chrome browser control and inspection bridge with Tab Groups isolation for CLI and Claude Code MCP",
   "main": "server.js",
   "bin": {
-    "codex-bridge": "./server.js",
-    "codex-mcp": "./mcp.js"
+    "agent-browser": "./server.js",
+    "agent-mcp": "./mcp.js"
   },
   "scripts": {
     "start": "node server.js",

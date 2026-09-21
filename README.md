@@ -1,4 +1,4 @@
-# Codex Chrome Bridge 🌐
+# Agent Browser Bridge 🌐
 
 > 仿照 **OpenAI Codex** 浏览器控制机制设计，基于 Chrome Manifest V3 扩展与本地 WebSocket/HTTP 守护进程桥接。  
 > 让本地终端 CLI 与 **Claude Code (MCP)** 大模型能够**直接控制并读取您当前日常使用的真实 Chrome 浏览器**。
@@ -9,7 +9,7 @@
 
 ---
 
-## 🌟 为什么选择 Codex Chrome Bridge？
+## 🌟 为什么选择 Agent Browser Bridge？
 
 传统自动化工具（如原生 Puppeteer、Playwright 或 `--remote-debugging-port=9222`）在日常 AI 协作中有三大硬伤：
 1. **丢失登录态**：每次冷启动都是全新的无痕/隔离环境，无法访问公司内网、禅道、Jira、企业飞书、看板等已登录系统。
@@ -68,9 +68,9 @@
 3. 点击左上角 **「加载已解压的扩展程序」**。
 4. 选择本项目中的 `extension` 文件夹：
    ```text
-   /path/to/codex-browser-bridge/extension
+   E:/work/2026v/codex-browser-bridge/extension
    ```
-5. Chrome 工具栏将出现 `Codex Chrome Bridge` 扩展图标。
+5. Chrome 工具栏将出现 `Agent Browser Bridge` 扩展图标。
 
 ---
 
@@ -79,10 +79,10 @@
 在终端中执行以下命令（全局生效，所有项目均可使用）：
 
 ```bash
-claude mcp add --scope user chrome-bridge node "/path/to/codex-browser-bridge/mcp.js"
+claude mcp add --scope user agent-browser-bridge node "E:/work/2026v/codex-browser-bridge/mcp.js"
 ```
 
-> 命令会自动将 `chrome-bridge` 注册进 `~/.claude.json`。后续每次打开 Claude Code 都会自动建立连接。
+> 命令会自动将 `agent-browser-bridge` 注册进 `~/.claude.json`。后续每次打开 Claude Code 都会自动建立连接。
 
 ---
 

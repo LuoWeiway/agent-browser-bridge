@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Codex Chrome Bridge - 本地守护服务与 CLI 命令行交互引擎
+ * Agent Browser Bridge - 本地守护服务与 CLI 命令行交互引擎
  * 零第三方依赖 (使用 Node.js 原生 http / crypto / child_process)
  *
  * 核心功能:
@@ -448,7 +448,7 @@ async function runCli() {
       case 'help':
       default:
         console.log(`
-Codex Chrome Bridge CLI - 类似 OpenAI Codex 的真实浏览器控制与读取
+Agent Browser Bridge CLI - 类似 OpenAI Codex 的真实浏览器控制与读取
 
 常用指令:
   node server.js list                             列出当前浏览器所有打开的标签页

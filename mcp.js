@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Codex Chrome Bridge - 标准 Model Context Protocol (MCP) Stdio 服务端
+ * Agent Browser Bridge - 标准 Model Context Protocol (MCP) Stdio 服务端
  * 零第三方依赖 (标准 JSON-RPC 2.0 stdio 协议)
  *
  * 为 Claude Code 提供对用户日常使用中的 Chrome 浏览器无感控制能力：
@@ -263,8 +263,8 @@ async function main() {
               tools: {}
             },
             serverInfo: {
-              name: 'codex-chrome-bridge',
-              version: '2.0.0'
+              name: 'agent-browser-bridge',
+              version: '2.1.0'
             }
           }
         });
