@@ -1,0 +1,9 @@
+.bridge_daemon.pid
+*.pid
+node_modules/
+*.log
+*.png
+*.jpg
+*.jpeg
+.DS_Store
+Thumbs.db

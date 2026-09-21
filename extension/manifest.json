@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "Codex Chrome Bridge",
+  "version": "2.0.0",
+  "description": "OpenAI Codex 级 Chrome 浏览器控制与读取桥接扩展（保留完整登录态与内网权限）",
+  "permissions": [
+    "tabs",
+    "tabGroups",
+    "activeTab",
+    "scripting",
+    "debugger",
+    "cookies",
+    "alarms",
+    "offscreen"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Codex Chrome Bridge"
+  }
+}
