@@ -567,33 +567,16 @@ async function evalInTab(query, expression) {
 
 /**
  * 导航/打开新页面核心（对齐 Codex 任务分组隔离机制）
- * 1. 默认 active: false（后台静默打开，绝不覆盖当前用户屏幕）
- * 2. 自动归纳到「Codex 任务」分组，避免与用户自己的标签混杂
+ * 核心原则：绝不覆写任何已有标签页！始终在专属「Codex 任务」分组中以 active: false 静默新建
  */
 async function navigateTab(query, url, isActive = false) {
-  // 1. 如果指定了已有标签且明确匹配到了它，进行原地更新
-  if (query && query.trim()) {
-    const matchedTab = await getBestTab(query, false);
-    if (matchedTab && matchedTab.id) {
-      await chrome.tabs.update(matchedTab.id, { url });
-      await addTabToCodexGroup(matchedTab.id, matchedTab.windowId);
-      return {
-        success: true,
-        tabId: matchedTab.id,
-        url,
-        action: 'updated_matched',
-        group: CODEX_GROUP_TITLE
-      };
-    }
-  }
-
-  // 2. 否则新建独立标签页（绝不覆盖当前正在操作的标签页）
   const focusedWin = await chrome.windows.getLastFocused();
   const windowId = focusedWin ? focusedWin.id : undefined;
 
+  // 始终新建独立后台标签页，绝对不覆盖任何现有正在操作的标签页
   const newTab = await chrome.tabs.create({
     url,
-    active: !!isActive, // 默认为 false，后台静默打开，不干扰用户视窗！
+    active: !!isActive, // 默认 false，后台静默打开，绝不抢占用户当前视窗！
     windowId
   });
 
