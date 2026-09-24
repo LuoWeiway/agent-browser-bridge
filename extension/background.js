@@ -1,15 +1,15 @@
 /**
- * Codex Chrome Bridge - Background Service Worker
- * 版本: 2.1.0
- * 架构: 仿 OpenAI Codex 浏览器控制架构
+ * Agent Browser Bridge - Background Service Worker
+ * 版本: 2.3.0
+ * 架构: Chrome MV3 + 本地 Bridge 架构
  * 核心升级:
- * 1. 任务标签分组 (Tab Groups) 隔离：新建/跳转任务在专属「Codex 任务」分组中进行，绝不覆盖用户正在操作的页面
+ * 1. 任务标签分组 (Tab Groups) 隔离：新建/跳转任务在专属「Agent 任务」分组中进行，绝不覆盖用户正在操作的页面
  * 2. 静默无感操作：所有读取与页面创建默认在后台执行 (active: false)，不抢夺系统焦点与窗口焦点
  * 3. 严格匹配机制：杜绝找不到目标时盲目降级覆盖当前激活页面的 Bug
  * 4. 深度 DOM + Iframe 递归提取成结构化 Markdown
  */
 
-const CODEX_GROUP_TITLE = 'Agent 任务';
+const AGENT_GROUP_TITLE = 'Agent 任务';
 let directSocket = null;
 let reconnectTimer = null;
 const handledRequests = new Map();
@@ -290,12 +290,12 @@ async function getBestTab(query, allowFallback = false) {
 }
 
 /**
- * 将标签页加入到 Codex 专属任务分组，实现与用户日常标签的清晰隔离
+ * 将标签页加入到 Agent 专属任务分组，实现与用户日常标签的清晰隔离
  */
-async function addTabToCodexGroup(tabId, windowId) {
+async function addTabToAgentGroup(tabId, windowId) {
   if (!chrome.tabGroups) return null;
   try {
-    const groups = await chrome.tabGroups.query({ windowId, title: CODEX_GROUP_TITLE });
+    const groups = await chrome.tabGroups.query({ windowId, title: AGENT_GROUP_TITLE });
     let groupId = (groups && groups.length > 0) ? groups[0].id : null;
 
     if (groupId) {
@@ -303,14 +303,14 @@ async function addTabToCodexGroup(tabId, windowId) {
     } else {
       groupId = await chrome.tabs.group({ tabIds: [tabId] });
       await chrome.tabGroups.update(groupId, {
-        title: CODEX_GROUP_TITLE,
+        title: AGENT_GROUP_TITLE,
         color: 'blue',
         collapsed: false
       });
     }
     return groupId;
   } catch (err) {
-    console.warn('[Codex Bridge] TabGroups 组织提示:', err.message);
+    console.warn('[Agent Browser Bridge] TabGroups 组织提示:', err.message);
     return null;
   }
 }
@@ -654,8 +654,8 @@ async function evalInTab(query, expression) {
 }
 
 /**
- * 导航/打开新页面核心（对齐 Codex 任务分组隔离机制）
- * 核心原则：绝不覆写任何已有标签页！始终在专属「Codex 任务」分组中以 active: false 静默新建
+ * 导航/打开新页面核心（专属任务分组隔离机制）
+ * 核心原则：绝不覆写任何已有标签页！始终在专属「Agent 任务」分组中以 active: false 静默新建
  */
 async function navigateTab(query, url, isActive = false) {
   const focusedWin = await chrome.windows.getLastFocused();
@@ -669,7 +669,7 @@ async function navigateTab(query, url, isActive = false) {
   });
 
   if (newTab && newTab.id) {
-    await addTabToCodexGroup(newTab.id, newTab.windowId);
+    await addTabToAgentGroup(newTab.id, newTab.windowId);
   }
 
   return {
@@ -677,7 +677,7 @@ async function navigateTab(query, url, isActive = false) {
     tabId: newTab.id,
     url,
     action: 'created_in_group',
-    group: CODEX_GROUP_TITLE
+    group: AGENT_GROUP_TITLE
   };
 }
 
@@ -702,7 +702,7 @@ async function closeTab(query, tabId) {
 async function cleanAgentGroup() {
   if (!chrome.tabGroups) return { error: '当前浏览器环境不支持 tabGroups' };
   try {
-    const groups = await chrome.tabGroups.query({ title: CODEX_GROUP_TITLE });
+    const groups = await chrome.tabGroups.query({ title: AGENT_GROUP_TITLE });
     if (!groups || groups.length === 0) {
       return { success: true, message: '当前没有打开的 Agent 任务分组' };
     }
@@ -716,7 +716,7 @@ async function cleanAgentGroup() {
         closed += ids.length;
       }
     }
-    return { success: true, closedCount: closed, groupTitle: CODEX_GROUP_TITLE };
+    return { success: true, closedCount: closed, groupTitle: AGENT_GROUP_TITLE };
   } catch (err) {
     return { error: '清理分组异常: ' + err.message };
   }

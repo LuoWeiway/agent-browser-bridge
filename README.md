@@ -1,7 +1,7 @@
 # Agent Browser Bridge 🌐
 
-> 仿照 **OpenAI Codex** 浏览器控制机制设计，基于 Chrome Manifest V3 扩展与本地 WebSocket/HTTP 守护进程桥接。  
-> 让本地终端 CLI 与 **Claude Code (MCP)** 大模型能够**直接控制并读取您当前日常使用的真实 Chrome 浏览器**。
+> 基于 Chrome Manifest V3 扩展与本地 WebSocket/HTTP 守护进程桥接。  
+> 让各类 **AI Agent (Claude Code, WorkBuddy, Cursor 等)** 与本地终端 CLI 能够**直接控制并读取您当前日常使用的真实 Chrome 浏览器**。
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)]()
@@ -18,7 +18,7 @@
 
 ### ✨ 本项目的核心突破与设计哲学：
 - 🟢 **100% 保持真实登录态**：扩展直接寄宿在您日常使用的 Chrome 中，所有 Session、Cookie、内网权限完美保留。
-- 🟢 **标签任务分组隔离 (Tab Groups)**：采用与 Codex 一致的设计，所有 Agent 打开的新页面自动归纳进专属的 **`[Agent 任务]`** 分组，并在后台静默加载（`active: false`），**绝对不抢夺焦点、绝对不覆盖您当前操作的页面**。
+- 🟢 **标签任务分组隔离 (Tab Groups)**：所有 Agent 打开的新页面自动归纳进专属的 **`[Agent 任务]`** 分组，并在后台静默加载（`active: false`），**绝对不抢夺焦点、绝对不覆盖您当前操作的页面**。
 - 🟢 **深度 DOM 与跨域 Iframe 穿透**：针对复杂单页及多层嵌套子框架系统（SPA / Iframe 架构），使用 `allFrames: true` 递归提取页面大纲、数据表格（自动转为 Markdown 表格）、输入控件与按钮。
 - 🟢 **双模交互支持**：既支持在终端通过 CLI 命令行调用，又作为标准 **MCP Server** 挂载至 Claude Code。
 - 🟢 **零第三方依赖 (Zero-Dependency)**：纯原生 Node.js 实现，无需运行庞大的 `npm install`，开箱即用。

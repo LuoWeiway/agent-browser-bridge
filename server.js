@@ -6,7 +6,7 @@
  * 核心功能:
  * 1. 守护进程 (Daemon): 长期驻留后台监听 18888 端口，维护与 Chrome 扩展的 WebSocket 通讯
  * 2. 自动启动守护 (Auto-spawn): CLI 或 MCP 调用时，若服务未运行则自动静默拉起
- * 3. 命令行交互 (CLI): 提供类似 Codex 的终端浏览器交互指令 (read / list / click / fill / shot / nav / eval)
+ * 3. 命令行交互 (CLI): 提供完整的终端浏览器交互指令 (read / list / click / fill / shot / nav / eval)
  */
 
 const http = require('http');
@@ -356,7 +356,7 @@ class BridgeServer {
   start() {
     this.server.listen(this.port, '127.0.0.1', () => {
       fs.writeFileSync(PID_FILE, process.pid.toString());
-      console.log(`[Codex Bridge] 守护服务已在 127.0.0.1:${this.port} 运行 (PID: ${process.pid})`);
+      console.log(`[Agent Browser Bridge] 守护服务已在 127.0.0.1:${this.port} 运行 (PID: ${process.pid})`);
     });
   }
 
@@ -875,7 +875,7 @@ async function runCli() {
       case 'help':
       default:
         console.log(`
-Agent Browser Bridge CLI (v2.3.0) - 类似 OpenAI Codex 的真实浏览器控制与读取
+Agent Browser Bridge CLI (v2.3.0) - 真实 Chrome 浏览器控制与读取引擎
 
 一键安装与自检:
   node server.js doctor                           🩺 全链路健康检查与状态诊断

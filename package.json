@@ -1,7 +1,7 @@
 {
   "name": "agent-browser-bridge",
   "version": "2.3.0",
-  "description": "Codex-style Chrome browser control and inspection bridge with Tab Groups isolation for CLI, Claude Code, WorkBuddy, Cursor and all AI agents",
+  "description": "Chrome browser control and inspection bridge with Tab Groups isolation for CLI, Claude Code, WorkBuddy, Cursor and all AI agents",
   "main": "server.js",
   "bin": {
     "agent-browser": "./server.js",
