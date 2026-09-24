@@ -92,24 +92,54 @@ class BridgeServer {
       const client = { socket, ip: socket.remoteAddress };
       this.clients.add(client);
 
-      socket.on('data', (buffer) => {
-        const message = this.decodeFrame(buffer);
-        if (message) {
-          try {
-            const data = JSON.parse(message);
-            // 响应保活心跳
-            if (data.type === 'ping') {
-              socket.write(this.encodeFrame(JSON.stringify({ type: 'pong' })));
-              return;
-            }
+      let socketBuffer = Buffer.alloc(0);
+      socket.on('data', (chunk) => {
+        socketBuffer = Buffer.concat([socketBuffer, chunk]);
 
-            // 处理指令异步响应
-            if (data.id && this.pendingRequests.has(data.id)) {
-              const { resolve } = this.pendingRequests.get(data.id);
-              this.pendingRequests.delete(data.id);
-              resolve(data.result);
-            }
-          } catch (e) {}
+        while (socketBuffer.length >= 2) {
+          const secondByte = socketBuffer[1];
+          const isMasked = (secondByte & 0x80) === 0x80;
+          let length = secondByte & 0x7f;
+          let offset = 2;
+
+          if (length === 126) {
+            if (socketBuffer.length < 4) break;
+            length = socketBuffer.readUInt16BE(2);
+            offset = 4;
+          } else if (length === 127) {
+            if (socketBuffer.length < 10) break;
+            length = Number(socketBuffer.readBigUInt64BE(2));
+            offset = 10;
+          }
+
+          const maskLength = isMasked ? 4 : 0;
+          const totalFrameSize = offset + maskLength + length;
+          if (socketBuffer.length < totalFrameSize) {
+            // 帧数据尚未接收完整，等待下一个 TCP 数据包
+            break;
+          }
+
+          const frameBuffer = socketBuffer.slice(0, totalFrameSize);
+          socketBuffer = socketBuffer.slice(totalFrameSize);
+
+          const message = this.decodeFrame(frameBuffer);
+          if (message) {
+            try {
+              const data = JSON.parse(message);
+              // 响应保活心跳
+              if (data.type === 'ping') {
+                socket.write(this.encodeFrame(JSON.stringify({ type: 'pong' })));
+                continue;
+              }
+
+              // 处理指令异步响应
+              if (data.id && this.pendingRequests.has(data.id)) {
+                const { resolve } = this.pendingRequests.get(data.id);
+                this.pendingRequests.delete(data.id);
+                resolve(data.result);
+              }
+            } catch (e) {}
+          }
         }
       });
 

@@ -12,14 +12,14 @@
 ## 🌟 为什么选择 Agent Browser Bridge？
 
 传统自动化工具（如原生 Puppeteer、Playwright 或 `--remote-debugging-port=9222`）在日常 AI 协作中有三大硬伤：
-1. **丢失登录态**：每次冷启动都是全新的无痕/隔离环境，无法访问公司内网、禅道、Jira、企业飞书、看板等已登录系统。
+1. **丢失登录态**：每次冷启动都是全新的无痕/隔离环境，无法访问公司内网、Jira、Confluence、各类业务后台与看板等已登录系统。
 2. **强制重启浏览器**：必须先关掉所有正在运行的 Chrome 窗口，严重打断工作流。
 3. **抢夺焦点与页面覆盖**：传统脚本一旦跳转页面，会直接把用户当前正在阅读或输入的屏幕视窗覆盖抢占。
 
 ### ✨ 本项目的核心突破与设计哲学：
 - 🟢 **100% 保持真实登录态**：扩展直接寄宿在您日常使用的 Chrome 中，所有 Session、Cookie、内网权限完美保留。
-- 🟢 **标签任务分组隔离 (Tab Groups)**：采用与 Codex 一致的设计，所有 Agent 打开的新页面自动归纳进专属的 **`[Codex 任务]`** 分组，并在后台静默加载（`active: false`），**绝对不抢夺焦点、绝对不覆盖您当前操作的页面**。
-- 🟢 **深度 DOM 与跨域 Iframe 穿透**：针对禅道（ZenTao 18+）等单页嵌套子框架系统，使用 `allFrames: true` 递归提取页面大纲、数据表格（自动转为 Markdown 表格）、输入控件与按钮。
+- 🟢 **标签任务分组隔离 (Tab Groups)**：采用与 Codex 一致的设计，所有 Agent 打开的新页面自动归纳进专属的 **`[Agent 任务]`** 分组，并在后台静默加载（`active: false`），**绝对不抢夺焦点、绝对不覆盖您当前操作的页面**。
+- 🟢 **深度 DOM 与跨域 Iframe 穿透**：针对复杂单页及多层嵌套子框架系统（SPA / Iframe 架构），使用 `allFrames: true` 递归提取页面大纲、数据表格（自动转为 Markdown 表格）、输入控件与按钮。
 - 🟢 **双模交互支持**：既支持在终端通过 CLI 命令行调用，又作为标准 **MCP Server** 挂载至 Claude Code。
 - 🟢 **零第三方依赖 (Zero-Dependency)**：纯原生 Node.js 实现，无需运行庞大的 `npm install`，开箱即用。
 
@@ -66,20 +66,17 @@
    ```
 2. 开启右上角的 **「开发者模式」** 开关。
 3. 点击左上角 **「加载已解压的扩展程序」**。
-4. 选择本项目中的 `extension` 文件夹：
-   ```text
-   E:/work/2026v/codex-browser-bridge/extension
-   ```
+4. 选择克隆到本地的 `extension` 文件夹（例如：`/path/to/agent-browser-bridge/extension`）。
 5. Chrome 工具栏将出现 `Agent Browser Bridge` 扩展图标。
 
 ---
 
 ### 第二步：将 MCP Server 挂载至 Claude Code（可选，开箱即用）
 
-在终端中执行以下命令（全局生效，所有项目均可使用）：
+在终端中执行以下命令（将路径替换为您本地的 `mcp.js` 绝对路径）：
 
 ```bash
-claude mcp add --scope user agent-browser-bridge node "E:/work/2026v/codex-browser-bridge/mcp.js"
+claude mcp add --scope user agent-browser-bridge node "/path/to/agent-browser-bridge/mcp.js"
 ```
 
 > 命令会自动将 `agent-browser-bridge` 注册进 `~/.claude.json`。后续每次打开 Claude Code 都会自动建立连接。
@@ -95,32 +92,32 @@ claude mcp add --scope user agent-browser-bridge node "E:/work/2026v/codex-brows
 node server.js list
 
 # 2. 智能模糊匹配并提取页面内容（支持 URL 关键词或中文标题，输出结构化 Markdown）
-node server.js read "禅道"
+node server.js read "Jira"
 node server.js read "prd"              # 匹配原型系统
 node server.js read "Jenkins"          # 匹配自动化构建页
 node server.js read ""                 # 默认读取当前正激活的页面
 
-# 3. 在专属「Codex 任务」分组中打开或跳转页面（后台静默打开，不干扰当前视窗）
-node server.js open "http://chandao.jadinec.com:1023/zentao/bug-view-21005.html"
+# 3. 在专属「Agent 任务」分组中打开或跳转页面（后台静默打开，不干扰当前视窗）
+node server.js open "https://github.com/trending"
 
 # 4. 模拟元素点击（支持 CSS 选择器 或 text= 文本匹配）
-node server.js click "text=保存" "禅道"
+node server.js click "text=保存" "Jira"
 node server.js click "#submit-btn"
 
 # 5. 表单输入（自动触发 React/Vue 的 input 与 change 事件）
-node server.js fill "#keyword" "水稳" "禅道"
+node server.js fill "#keyword" "BugFix" "Jira"
 
 # 6. 网页滚动 (down / up / top / bottom)
-node server.js scroll down "禅道"
+node server.js scroll down "Jira"
 
 # 7. 截取网页视口快照保存为本地 PNG 图片
-node server.js shot "禅道" ./screenshot.png
+node server.js shot "Jira" ./screenshot.png
 
 # 8. 在目标页面上下文中执行自定义 JavaScript
-node server.js eval "document.title" "禅道"
+node server.js eval "document.title" "Jira"
 
 # 9. 关闭指定的标签页
-node server.js close "21005"
+node server.js close "trending"
 
 # 10. 一键清理并关闭所有 Agent 任务分组中的后台临时标签页
 node server.js clean
@@ -132,8 +129,8 @@ node server.js clean
 
 完成 MCP 注册后，您无需敲任何命令行，直接在 Claude 对话框中吩咐：
 
-- 🗣️ *“帮我看一眼我当前浏览器打开的禅道页面，有哪些待办 Bug？”*
-- 🗣️ *“读取一下水稳看板当前展示的生产批次数据”*
+- 🗣️ *“帮我看一眼我当前浏览器打开的工单页面，有哪些待办任务？”*
+- 🗣️ *“读取一下监控看板当前展示的核心指标数据”*
 - 🗣️ *“帮我在打开的工单页面点击‘审核通过’按钮，把操作结果截个图给我”*
 - 🗣️ *“帮我查一下当前浏览器打开了哪些标签页”*
 - 🗣️ *“把刚才打开的 Agent 任务页面全部清理关闭”*

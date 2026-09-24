@@ -4,7 +4,7 @@
  * 零第三方依赖 (标准 JSON-RPC 2.0 stdio 协议)
  *
  * 为 Claude Code 提供对用户日常使用中的 Chrome 浏览器无感控制能力：
- * 1. browser_read: 读取已打开页面/内部系统 (禅道/看板/各类登录态应用)
+ * 1. browser_read: 读取已打开页面/内部系统 (工单/看板/各类登录态应用)
  * 2. browser_list_tabs: 查询当前全部打开的标签页
  * 3. browser_click: 模拟元素点击
  * 4. browser_fill: 表单输入
@@ -22,13 +22,13 @@ const { ensureDaemon, callApi } = require('./server');
 const TOOLS = [
   {
     name: 'browser_read',
-    description: '从当前打开的 Chrome 浏览器中智能模糊定位并读取网页内容（支持传入 URL 关键字或中文标题描述如"禅道"、"水稳"，完整提取包含 iframe、表格、大纲、表单控件与正文，100% 保留所有用户登录态与内部网络权限）',
+    description: '从当前打开的 Chrome 浏览器中智能模糊定位并读取网页内容（支持传入 URL 关键字或中文标题描述如"工单"、"看板"，完整提取包含 iframe、表格、大纲、表单控件与正文，100% 保留所有用户登录态与内部网络权限）',
     inputSchema: {
       type: 'object',
       properties: {
         query: {
           type: 'string',
-          description: '目标页面的 URL 关键词、网页标题关键字或自然语言描述（例如"禅道"、"生产记录"、"localhost:8080"），留空则默认读取当前正在聚焦的活动标签页'
+          description: '目标页面的 URL 关键词、网页标题关键字或自然语言描述（例如"工单"、"监控大屏"、"localhost:8080"），留空则默认读取当前正在聚焦的活动标签页'
         }
       }
     }

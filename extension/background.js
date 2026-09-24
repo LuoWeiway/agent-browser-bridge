@@ -200,7 +200,7 @@ async function getBestTab(query, allowFallback = false) {
     // 标题完全包含
     if (tabTitle.includes(q)) score += 200;
 
-    // 分词匹配（针对“禅道Bug”、“21005”等关键词）
+    // 分词匹配（针对多关键词检索）
     const tokens = q.split(/[\s\-_/\\,，。]+/);
     for (const token of tokens) {
       if (!token) continue;
@@ -290,7 +290,7 @@ async function readTabContent(query, full = false) {
   }
 
   try {
-    // 注入提取脚本，allFrames: true 确保穿透所有 iframe (如禅道内部 QA 列表)
+    // 注入提取脚本，allFrames: true 确保穿透所有 iframe (如多层嵌套子系统列表)
     const frameResults = await chrome.scripting.executeScript({
       target: { tabId: tab.id, allFrames: true },
       func: () => {
