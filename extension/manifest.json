@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Agent Browser Bridge",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "Codex-style Chrome browser control and inspection bridge with Tab Groups isolation for CLI and Claude Code MCP",
   "permissions": [
     "tabs",

@@ -1,12 +1,44 @@
-# Agent Browser Bridge — 命令与工具参考
+# Agent Browser Bridge — 命令与工具参考 (v2.2.0)
 
 所有 CLI 命令均在任意工作目录下可执行，`server.js` 内部用 `__dirname` 定位自身。
 
 ```bash
-BRIDGE="E:/work/2026v/codex-browser-bridge/server.js"
+BRIDGE="server.js"
 ```
 
-## CLI 命令详解
+## 一键安装与系统自检命令
+
+### `doctor [--fix]`
+
+执行 5 级全链路自检（Node 环境、端口与守护进程、Chrome 扩展连接状态、浏览器实时页面提取能力、各 AI Agent 配置文件注册合规性）。
+
+```bash
+node "$BRIDGE" doctor
+node "$BRIDGE" doctor --fix    # 诊断并自动尝试拉起服务、补全 Agent 配置
+```
+
+### `install [all|agent] [--dry-run]`
+
+自动将 `agent-browser-bridge` 的绝对路径与启动参数注册至指定的 AI Agent 配置文件，并自动生成 `.bak` 备份。
+
+```bash
+node "$BRIDGE" install all             # 扫描并注册至所有已检测到的 Agent
+node "$BRIDGE" install workbuddy       # 仅注册至 WorkBuddy
+node "$BRIDGE" install claude          # 仅注册至 Claude Code
+node "$BRIDGE" install cursor          # 仅注册至 Cursor
+node "$BRIDGE" install desktop         # 仅注册至 Claude Desktop
+node "$BRIDGE" install windsurf        # 仅注册至 Windsurf
+```
+
+### `open-ext`
+
+快捷调起系统浏览器打开 `chrome://extensions`，并在终端高亮输出本机 `extension/` 的绝对路径供快速加载。
+
+```bash
+node "$BRIDGE" open-ext
+```
+
+## CLI 日常控制命令详解
 
 ### `list`
 
@@ -134,13 +166,38 @@ node "$BRIDGE" --server
 
 所有工具均支持可选参数 `query` 用于定位目标标签页。
 
-## HTTP API（直接调用）
+## HTTP REST & SSE 接口 (v2.2.0 多 Agent 通用接入)
 
-守护进程对外暴露两个端点，仅监听 `127.0.0.1:18888`：
+守护进程在 `127.0.0.1:18888` 上提供多种通用接入协议：
+
+### 1. 健康检查与状态
 
 ```bash
-curl http://127.0.0.1:18888/ping          # 健康检查，返回 { status, clients, pid }
+curl http://127.0.0.1:18888/ping          # 返回 { status, clients, pid, version }
 ```
+
+### 2. OpenAI Function Calling 规范工具列表
+
+```bash
+curl http://127.0.0.1:18888/v1/tools      # 返回 standard MCP tools 与 openai_tools 两种结构
+```
+
+### 3. HTTP REST 工具直接调用 (Python / Dify / LangChain)
+
+```bash
+curl -X POST http://127.0.0.1:18888/v1/tools/call \
+  -H "Content-Type: application/json" \
+  -d '{"name":"browser_read","arguments":{"query":"看板"}}'
+```
+
+### 4. 标准 MCP SSE 传输通道
+
+```bash
+# 挂载端点: http://127.0.0.1:18888/sse
+# 接收端点: http://127.0.0.1:18888/message?sessionId=<sessionId>
+```
+
+### 5. 内部 JSON API 通道
 
 ```bash
 curl -X POST http://127.0.0.1:18888/api \
@@ -149,8 +206,6 @@ curl -X POST http://127.0.0.1:18888/api \
 ```
 
 `action` 取值：`list` / `read` / `click` / `fill` / `scroll` / `shot` / `eval` / `navigate` / `open` / `close` / `clean`。
-
-响应：`{ success: true, result: ... }` 或 `{ success: false, error: "..." }`。
 
 ## 典型组合
 

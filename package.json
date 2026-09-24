@@ -1,7 +1,7 @@
 {
   "name": "agent-browser-bridge",
-  "version": "2.1.0",
-  "description": "Codex-style Chrome browser control and inspection bridge with Tab Groups isolation for CLI and Claude Code MCP",
+  "version": "2.2.0",
+  "description": "Codex-style Chrome browser control and inspection bridge with Tab Groups isolation for CLI, Claude Code, WorkBuddy, Cursor and all AI agents",
   "main": "server.js",
   "bin": {
     "agent-browser": "./server.js",
@@ -9,6 +9,13 @@
   },
   "scripts": {
     "start": "node server.js",
+    "doctor": "node server.js doctor",
+    "setup": "node server.js install all",
+    "install:all": "node server.js install all",
+    "install:workbuddy": "node server.js install workbuddy",
+    "install:claude": "node server.js install claude-code",
+    "install:cursor": "node server.js install cursor",
+    "open-ext": "node server.js open-ext",
     "list": "node server.js list",
     "read": "node server.js read",
     "mcp": "node mcp.js"

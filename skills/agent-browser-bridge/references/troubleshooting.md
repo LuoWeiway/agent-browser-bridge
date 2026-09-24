@@ -1,4 +1,22 @@
-# 故障排查
+# 故障排查 (v2.2.0)
+
+## 0. 首选：全链路一键诊断与自愈
+
+遇到任何问题，优先在项目根目录下执行：
+
+```bash
+node server.js doctor
+```
+
+若提示守护进程未启动或配置缺失，直接运行带自动修复参数：
+
+```bash
+node server.js doctor --fix
+```
+
+诊断工具会自动测试 Node 版本、端口占用、进程状态、扩展连接与已注册 Agent 配置，并给出明确指令。
+
+---
 
 ## 1. 提示「Chrome 扩展未连接」
 
@@ -23,12 +41,17 @@ Chrome 扩展未连接。请确认：
 2. **唤醒守护进程 + 重连扩展**
 
    ```bash
-   node "E:/work/2026v/codex-browser-bridge/server.js" list
+   node server.js list
    ```
 
    然后点扩展图标里的「🔄 重新连接 Bridge 服务」。
 
-3. **扩展是否已加载**：`chrome://extensions` 确认 `Agent Browser Bridge` 已启用，且「加载已解压的扩展程序」指向的是仓库下的 `extension` 目录。
+3. **扩展是否已加载**：
+   运行快捷命令自动调出扩展管理页：
+   ```bash
+   node server.js open-ext
+   ```
+   确认 `Agent Browser Bridge` 已启用，且「加载已解压的扩展程序」指向的是当前项目的 `extension` 目录。
 
 4. 改了 `extension/` 下任何文件后，必须到 `chrome://extensions` 点该扩展卡片的「🔄 重新加载」——Chrome 不会热重载未打包扩展。
 
@@ -44,7 +67,11 @@ netstat -ano | grep 18888
 taskkill //PID <PID> //F
 ```
 
-如确实需要换端口，改 `server.js` 顶部的 `const PORT = 18888;`，同时同步修改 `extension/offscreen.js` 与 `extension/background.js` 中连接 `127.0.0.1:18888` 的地址，然后重新加载扩展。
+如需更换端口，可指定环境变量启动：
+```bash
+BRIDGE_PORT=18890 node server.js --server
+```
+同时同步修改 `extension/offscreen.js` 与 `extension/background.js` 中连接端口，然后重新加载扩展。
 
 ## 3. `.bridge_daemon.pid` 是残留文件
 
@@ -91,7 +118,7 @@ PID 文件只是记录，不是锁。判断守护进程是否活着**只看 `/pi
 想看实时日志，前台启动：
 
 ```bash
-node "E:/work/2026v/codex-browser-bridge/server.js" --server
+node server.js --server
 ```
 
 ## 安全提示

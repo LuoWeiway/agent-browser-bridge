@@ -56,30 +56,71 @@
 
 ---
 
-## 🚀 极简安装指南（2 步完成）
+## 🚀 极简三步上手指南 (v2.2.0)
 
 ### 第一步：在 Chrome 中加载扩展
 
-1. 打开 Google Chrome，访问：
-   ```text
-   chrome://extensions
+1. 在终端运行快捷命令（会自动打开 Chrome 扩展页并打印本地绝对路径）：
+   ```bash
+   node server.js open-ext
    ```
 2. 开启右上角的 **「开发者模式」** 开关。
-3. 点击左上角 **「加载已解压的扩展程序」**。
-4. 选择克隆到本地的 `extension` 文件夹（例如：`/path/to/agent-browser-bridge/extension`）。
-5. Chrome 工具栏将出现 `Agent Browser Bridge` 扩展图标。
+3. 点击左上角 **「加载已解压的扩展程序」**，选择打印出的 `extension` 目录。
+4. Chrome 工具栏将出现 `Agent Browser Bridge` 扩展图标。
 
 ---
 
-### 第二步：将 MCP Server 挂载至 Claude Code（可选，开箱即用）
+### 第二步：一键自动集成至您的 AI Agent
 
-在终端中执行以下命令（将路径替换为您本地的 `mcp.js` 绝对路径）：
+**不再需要手动查目录或修改 JSON 配置文件！** 运行内置的一键安装器：
 
 ```bash
-claude mcp add --scope user agent-browser-bridge node "/path/to/agent-browser-bridge/mcp.js"
+# 一键自动扫描并注册至本机所有已安装的 Agent (WorkBuddy, Claude, Cursor, Windsurf等)
+node server.js install all
+
+# 或按需单独注册：
+node server.js install workbuddy       # 接入 WorkBuddy AI
+node server.js install claude          # 接入 Claude Code
+node server.js install cursor          # 接入 Cursor
+node server.js install desktop         # 接入 Claude Desktop
+node server.js install windsurf        # 接入 Windsurf
 ```
 
-> 命令会自动将 `agent-browser-bridge` 注册进 `~/.claude.json`。后续每次打开 Claude Code 都会自动建立连接。
+> 安装器会自动检测路径、备份原配置文件（`.bak`）并将标准化绝对路径规范写入。
+
+---
+
+### 第三步：全链路自检诊断 (Doctor)
+
+安装完成后，随时执行诊断命令验证全链路是否通畅：
+
+```bash
+node server.js doctor
+
+# 支持一键自愈修复（自动拉起后台进程、自动补全配置）：
+node server.js doctor --fix
+```
+
+---
+
+## 🌐 多协议支持：接入更多 Agent 与自动化流程
+
+除了 Stdio MCP，本项目还原生提供 HTTP REST 与 SSE 接口，零依赖开箱即用：
+
+### 1. OpenAI Function Calling 格式工具规范
+- **获取工具定义清单**：`GET http://127.0.0.1:18888/v1/tools`
+- **执行工具调用**：`POST http://127.0.0.1:18888/v1/tools/call`
+  ```json
+  {
+    "name": "browser_read",
+    "arguments": { "query": "Jira" }
+  }
+  ```
+  *任何 Python、LangChain、Dify 或自动化脚本均可直接发起 HTTP 请求调用，无需构建 MCP 客户端。*
+
+### 2. 标准 MCP Server-Sent Events (SSE) 通道
+- **SSE 挂载端点**：`http://127.0.0.1:18888/sse`
+- 适用于不支持本机构建子进程、但支持网络 MCP 的远程或 Web 智能体。
 
 ---
 

@@ -12,6 +12,14 @@
 const CODEX_GROUP_TITLE = 'Agent 任务';
 let directSocket = null;
 let reconnectTimer = null;
+const handledRequests = new Map();
+
+function cleanOldRequests() {
+  const now = Date.now();
+  for (const [id, ts] of handledRequests.entries()) {
+    if (now - ts > 15000) handledRequests.delete(id);
+  }
+}
 
 // ==========================================
 // 1. 保活机制：Offscreen Document 与 Service Worker 连接
@@ -26,14 +34,17 @@ async function ensureOffscreenDocument() {
     await chrome.offscreen.createDocument({
       url: 'offscreen.html',
       reasons: ['BLOBS'],
-      justification: '保持与本地 Codex CLI / MCP Bridge 服务 (127.0.0.1:18888) 的 WebSocket 长连接'
+      justification: '保持与本地 Agent CLI / MCP Bridge 服务 (127.0.0.1:18888) 的 WebSocket 长连接'
     });
   } catch (err) {
-    console.warn('[Codex Bridge] 无法创建 Offscreen 文档:', err.message);
+    console.warn('[Agent Bridge] 无法创建 Offscreen 文档:', err.message);
   }
 }
 
+// 仅在无 offscreen API 支持的环境下使用 directSocket 兜底
 function connectDirectSocket() {
+  if (chrome.offscreen) return; // 优先使用 offscreen 保证持久连接且不产生双路连接
+
   if (directSocket && (directSocket.readyState === WebSocket.OPEN || directSocket.readyState === WebSocket.CONNECTING)) {
     return;
   }
@@ -42,7 +53,11 @@ function connectDirectSocket() {
     directSocket = new WebSocket('ws://127.0.0.1:18888');
 
     directSocket.onopen = () => {
-      console.log('[Codex Bridge SW] Direct socket 已连接');
+      console.log('[Agent Bridge SW] Direct socket 已连接');
+      try {
+        directSocket.send(JSON.stringify({ type: 'register', role: 'background' }));
+      } catch (e) {}
+
       if (reconnectTimer) {
         clearInterval(reconnectTimer);
         reconnectTimer = null;
@@ -53,12 +68,19 @@ function connectDirectSocket() {
       try {
         const msg = JSON.parse(event.data);
         if (msg.type === 'ping' || msg.type === 'pong') return;
+
+        if (msg.id && handledRequests.has(msg.id)) return;
+        if (msg.id) {
+          handledRequests.set(msg.id, Date.now());
+          cleanOldRequests();
+        }
+
         const responseData = await handleCommand(msg.action, msg.params);
         if (directSocket && directSocket.readyState === WebSocket.OPEN) {
           directSocket.send(JSON.stringify({ id: msg.id, result: responseData }));
         }
       } catch (err) {
-        console.error('[Codex Bridge SW] 消息处理异常:', err);
+        console.error('[Agent Bridge SW] 消息处理异常:', err);
       }
     };
 
@@ -72,6 +94,7 @@ function connectDirectSocket() {
 }
 
 function scheduleDirectReconnect() {
+  if (chrome.offscreen) return;
   if (!reconnectTimer) {
     reconnectTimer = setInterval(() => {
       connectDirectSocket();
@@ -92,8 +115,22 @@ chrome.alarms.onAlarm.addListener(() => {
   ensureOffscreenDocument();
 });
 
+// 用户聚焦或切换标签页时自愈激活
+if (chrome.windows && chrome.windows.onFocusChanged) {
+  chrome.windows.onFocusChanged.addListener((windowId) => {
+    if (windowId !== chrome.windows.WINDOW_ID_NONE) {
+      ensureOffscreenDocument();
+    }
+  });
+}
+if (chrome.tabs && chrome.tabs.onActivated) {
+  chrome.tabs.onActivated.addListener(() => {
+    ensureOffscreenDocument();
+  });
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (msg.action === 'reconnect') {
+  if (msg.action === 'reconnect' || msg.action === 'reconnect_ws') {
     ensureOffscreenDocument();
     connectDirectSocket();
     sendResponse({ status: 'reconnecting' });
@@ -101,6 +138,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg.id && msg.action) {
+    if (handledRequests.has(msg.id)) {
+      // 重复请求已在处理中，避免重复执行
+      return false;
+    }
+    handledRequests.set(msg.id, Date.now());
+    cleanOldRequests();
+
     handleCommand(msg.action, msg.params).then(res => {
       sendResponse(res);
     });

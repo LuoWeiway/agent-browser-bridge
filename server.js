@@ -15,7 +15,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
 
-const PORT = 18888;
+const PORT = parseInt(process.env.BRIDGE_PORT || '18888', 10);
 const PID_FILE = path.join(__dirname, '.bridge_daemon.pid');
 
 // ==========================================
@@ -27,13 +27,14 @@ class BridgeServer {
     this.port = port;
     this.clients = new Set();
     this.pendingRequests = new Map();
+    this.sseSessions = new Map();
     this.reqId = 1;
 
     this.server = http.createServer(async (req, res) => {
       // 允许本地跨域与 OPTIONS 预检
       res.setHeader('Access-Control-Allow-Origin', '*');
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
       if (req.method === 'OPTIONS') {
         res.writeHead(204);
@@ -41,15 +42,24 @@ class BridgeServer {
         return;
       }
 
-      // 健康检查与客户端计数
-      if (req.url === '/ping') {
+      const parsedUrl = new URL(req.url, `http://127.0.0.1:${this.port}`);
+      const pathname = parsedUrl.pathname;
+
+      // 1. 健康检查与客户端计数
+      if (pathname === '/ping') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ status: 'ok', clients: this.clients.size, pid: process.pid }));
+        res.end(JSON.stringify({
+          status: 'ok',
+          clients: this.clients.size,
+          sseClients: this.sseSessions.size,
+          pid: process.pid,
+          version: '2.2.0'
+        }));
         return;
       }
 
-      // 核心 API 分发接口
-      if (req.url === '/api' && req.method === 'POST') {
+      // 2. 核心 API 分发接口 (CLI / Stdio MCP 转发通道)
+      if (pathname === '/api' && req.method === 'POST') {
         let body = '';
         req.on('data', chunk => { body += chunk; });
         req.on('end', async () => {
@@ -61,6 +71,101 @@ class BridgeServer {
           } catch (err) {
             res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
             res.end(JSON.stringify({ success: false, error: err.message || String(err) }));
+          }
+        });
+        return;
+      }
+
+      // 3. 通用 HTTP REST 工具清单 (供非 MCP Agent / OpenAI Function Calling 调用)
+      if (pathname === '/v1/tools' && req.method === 'GET') {
+        try {
+          const { TOOLS } = require('./mcp');
+          const openaiTools = TOOLS.map(t => ({
+            type: 'function',
+            function: {
+              name: t.name,
+              description: t.description,
+              parameters: t.inputSchema
+            }
+          }));
+          res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify({ tools: TOOLS, openai_tools: openaiTools }));
+        } catch (err) {
+          res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify({ error: err.message }));
+        }
+        return;
+      }
+
+      // 4. 通用 HTTP REST 工具执行接口
+      if ((pathname === '/v1/tools/call' || pathname.startsWith('/v1/tools/')) && req.method === 'POST') {
+        let body = '';
+        req.on('data', chunk => { body += chunk; });
+        req.on('end', async () => {
+          try {
+            const { handleToolCall } = require('./mcp');
+            const data = JSON.parse(body || '{}');
+            let toolName = data.name || data.tool;
+            if (!toolName && pathname.startsWith('/v1/tools/') && pathname !== '/v1/tools/call') {
+              toolName = pathname.replace('/v1/tools/', '').trim();
+            }
+            const toolArgs = data.arguments || data.args || data.params || {};
+
+            if (!toolName) {
+              res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+              res.end(JSON.stringify({ success: false, error: '缺少工具名称 (name)' }));
+              return;
+            }
+
+            const toolResult = await handleToolCall(toolName, toolArgs);
+            res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+            res.end(JSON.stringify({ success: !toolResult.isError, result: toolResult }));
+          } catch (err) {
+            res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+            res.end(JSON.stringify({ success: false, error: err.message || String(err) }));
+          }
+        });
+        return;
+      }
+
+      // 5. MCP Server-Sent Events (SSE) 协议通道
+      if (pathname === '/sse' && req.method === 'GET') {
+        const sessionId = crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(16).toString('hex');
+        res.writeHead(200, {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
+          'Access-Control-Allow-Origin': '*'
+        });
+
+        res.write(`event: endpoint\ndata: /message?sessionId=${sessionId}\n\n`);
+        this.sseSessions.set(sessionId, res);
+
+        req.on('close', () => {
+          this.sseSessions.delete(sessionId);
+        });
+        return;
+      }
+
+      // 6. MCP SSE 客户端消息接收通道
+      if (pathname === '/message' && req.method === 'POST') {
+        const sessionId = parsedUrl.searchParams.get('sessionId');
+        const sseRes = this.sseSessions.get(sessionId);
+
+        let body = '';
+        req.on('data', chunk => { body += chunk; });
+        req.on('end', async () => {
+          try {
+            const jsonRpc = JSON.parse(body || '{}');
+            const responseRpc = await this.handleJsonRpc(jsonRpc);
+            if (responseRpc && sseRes) {
+              sseRes.write(`event: message\ndata: ${JSON.stringify(responseRpc)}\n\n`);
+            }
+            res.writeHead(202, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ status: 'accepted' }));
+          } catch (err) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: err.message }));
           }
         });
         return;
@@ -194,15 +299,66 @@ class BridgeServer {
         }
       });
 
-      // 广播给所有已连接客户端（扩展的 offscreen/background）
-      for (const client of this.clients) {
+      // 优先选取最新的一个可用客户端发送（避免多连接重复执行）
+      const clientList = Array.from(this.clients);
+      let sent = false;
+      while (clientList.length > 0) {
+        const client = clientList.pop();
         try {
           client.socket.write(encoded);
+          sent = true;
+          break;
         } catch (e) {
           this.clients.delete(client);
         }
       }
+
+      if (!sent) {
+        this.pendingRequests.delete(id);
+        clearTimeout(timer);
+        reject(new Error('Chrome 扩展连接已断开，未能发送指令'));
+      }
     });
+  }
+
+  // 处理标准 MCP JSON-RPC 请求 (供 SSE 协议分发)
+  async handleJsonRpc(req) {
+    const { id, method, params } = req;
+    const { TOOLS, handleToolCall } = require('./mcp');
+
+    if (method === 'initialize') {
+      return {
+        jsonrpc: '2.0',
+        id,
+        result: {
+          protocolVersion: '2024-11-05',
+          capabilities: { tools: {} },
+          serverInfo: { name: 'agent-browser-bridge', version: '2.2.0' }
+        }
+      };
+    }
+    if (method === 'notifications/initialized') {
+      return null;
+    }
+    if (method === 'ping') {
+      return { jsonrpc: '2.0', id, result: {} };
+    }
+    if (method === 'tools/list') {
+      return { jsonrpc: '2.0', id, result: { tools: TOOLS } };
+    }
+    if (method === 'tools/call') {
+      const { name, arguments: toolArgs } = params || {};
+      const toolResult = await handleToolCall(name, toolArgs || {});
+      return { jsonrpc: '2.0', id, result: toolResult };
+    }
+    if (id !== undefined) {
+      return {
+        jsonrpc: '2.0',
+        id,
+        error: { code: -32601, message: `Method not found: ${method}` }
+      };
+    }
+    return null;
   }
 
   // WebSocket 帧解码 (RFC 6455)
@@ -351,6 +507,30 @@ function callApi(action, params = {}, timeout = 25000) {
 // 3. 命令行交互 (CLI 命令实现)
 // ==========================================
 
+function openExtensionPage() {
+  const extPath = path.resolve(__dirname, 'extension').replace(/\\/g, '/');
+  console.log(`\n======================================================`);
+  console.log(`🧩 Chrome 扩展快速加载助手`);
+  console.log(`======================================================`);
+  console.log(`扩展本地绝对路径:`);
+  console.log(`👉  ${extPath}\n`);
+  console.log(`操作步骤:`);
+  console.log(`1. 在 Chrome 地址栏访问: chrome://extensions`);
+  console.log(`2. 开启右上角「开发者模式」开关`);
+  console.log(`3. 点击左上角「加载已解压的扩展程序」，选择上述路径`);
+  console.log(`4. 工具栏出现图标并显示 🟢 即完成连接！\n`);
+
+  try {
+    if (process.platform === 'win32') {
+      spawn('cmd', ['/c', 'start', 'chrome://extensions'], { detached: true, stdio: 'ignore' }).unref();
+    } else if (process.platform === 'darwin') {
+      spawn('open', ['chrome://extensions'], { detached: true, stdio: 'ignore' }).unref();
+    } else {
+      spawn('xdg-open', ['chrome://extensions'], { detached: true, stdio: 'ignore' }).unref();
+    }
+  } catch (e) {}
+}
+
 async function runCli() {
   const args = process.argv.slice(2);
   const cmd = args[0] ? args[0].toLowerCase() : 'help';
@@ -366,6 +546,29 @@ async function runCli() {
   if (cmd === '--daemon') {
     const server = new BridgeServer(PORT);
     server.start();
+    return;
+  }
+
+  // 3. 全链路诊断模式 (无需预先拉起守护)
+  if (cmd === 'doctor') {
+    const { runDoctor } = require('./doctor');
+    const fix = args.includes('--fix');
+    await runDoctor({ fix });
+    return;
+  }
+
+  // 4. 多 Agent 一键自动集成安装
+  if (cmd === 'install' || cmd === 'setup') {
+    const { runInstall } = require('./installer');
+    const target = args.find(a => !a.startsWith('-') && a !== cmd) || 'all';
+    const dryRun = args.includes('--dry-run') || args.includes('-d');
+    runInstall(target, { dryRun });
+    return;
+  }
+
+  // 5. 快速打开 Chrome 扩展管理页与路径指引
+  if (cmd === 'open-ext' || cmd === 'ext') {
+    openExtensionPage();
     return;
   }
 
@@ -495,9 +698,14 @@ async function runCli() {
       case 'help':
       default:
         console.log(`
-Agent Browser Bridge CLI - 类似 OpenAI Codex 的真实浏览器控制与读取
+Agent Browser Bridge CLI (v2.2.0) - 类似 OpenAI Codex 的真实浏览器控制与读取
 
-常用指令:
+一键安装与自检:
+  node server.js doctor                           🩺 全链路健康检查与状态诊断
+  node server.js install [all|agent]              🚀 一键自动注册至各类 AI Agent (WorkBuddy/Claude/Cursor等)
+  node server.js open-ext                         🧩 快捷打开 Chrome 扩展管理页与路径指引
+
+日常控制指令:
   node server.js list                             列出当前浏览器所有打开的标签页
   node server.js read [url或标题关键词]            智能匹配标签并读取 Markdown 内容 (含 iframe)
   node server.js open <URL>                       在专属「Agent 任务」分组中后台静默打开新页面
@@ -521,6 +729,7 @@ Agent Browser Bridge CLI - 类似 OpenAI Codex 的真实浏览器控制与读取
 // 模块导出供 MCP Server 直接复用
 module.exports = {
   PORT,
+  BridgeServer,
   ensureDaemon,
   callApi
 };

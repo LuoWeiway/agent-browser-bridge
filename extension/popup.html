@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <style>
     body {
-      width: 320px;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      width: 330px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
       margin: 0;
       padding: 14px;
       color: #333;
@@ -24,20 +24,34 @@
       font-size: 15px;
       color: #111;
     }
+    .version {
+      font-size: 11px;
+      color: #888;
+      margin-left: 4px;
+    }
     .badge {
-      font-size: 12px;
+      font-size: 11px;
       padding: 3px 8px;
       border-radius: 12px;
       font-weight: 500;
     }
     .badge-ok { background: #e6f7ed; color: #027a48; }
     .badge-err { background: #feefef; color: #b42318; }
+    .badge-warn { background: #fffbeb; color: #b45309; }
+
+    .status-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 8px;
+      font-size: 12px;
+    }
+
     .info-card {
       background: #fff;
       border: 1px solid #e5e5e5;
       border-radius: 8px;
       padding: 10px;
-      margin-bottom: 12px;
+      margin-bottom: 10px;
     }
     .label {
       font-size: 11px;
@@ -52,21 +66,53 @@
       word-break: break-all;
       line-height: 1.4;
     }
+
+    .btn-group {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 6px;
+    }
     button {
-      width: 100%;
+      flex: 1;
       background: #2563eb;
       color: #fff;
       border: none;
       border-radius: 6px;
-      padding: 8px 12px;
-      font-size: 13px;
+      padding: 8px 10px;
+      font-size: 12px;
       font-weight: 500;
       cursor: pointer;
-      transition: background 0.2s;
+      transition: background 0.15s;
     }
     button:hover {
       background: #1d4ed8;
     }
+    button.btn-sec {
+      background: #f1f5f9;
+      color: #334155;
+      border: 1px solid #cbd5e1;
+    }
+    button.btn-sec:hover {
+      background: #e2e8f0;
+    }
+    button.btn-danger {
+      background: #fee2e2;
+      color: #991b1b;
+      border: 1px solid #fecaca;
+    }
+    button.btn-danger:hover {
+      background: #fecaca;
+    }
+
+    #feedbackBox {
+      display: none;
+      padding: 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      margin-top: 8px;
+      line-height: 1.4;
+    }
+
     .tip {
       font-size: 11px;
       color: #888;
@@ -78,18 +124,41 @@
 </head>
 <body>
   <div class="header">
-    <div class="title">Agent Browser Bridge</div>
-    <div id="status" class="badge badge-err">检查中...</div>
+    <div class="title">Agent Browser Bridge <span class="version">v2.2.0</span></div>
+    <div id="statusBadge" class="badge badge-err">检测中...</div>
   </div>
 
   <div class="info-card">
-    <div class="label">当前标签页</div>
-    <div id="tabTitle" class="val">获取中...</div>
-    <div id="tabUrl" class="val" style="color: #666; margin-top: 4px;"></div>
+    <div class="status-row">
+      <span>守护服务 (127.0.0.1:18888)</span>
+      <strong id="daemonStatus">检测中...</strong>
+    </div>
+    <div class="status-row">
+      <span>Chrome 扩展客户端</span>
+      <strong id="clientStatus">检测中...</strong>
+    </div>
   </div>
 
-  <button id="reconnectBtn">🔄 重新连接 Bridge 服务</button>
-  <div class="tip">守护服务: 127.0.0.1:18888<br>与 CLI 及 Claude MCP 保持实时同步</div>
+  <div class="info-card">
+    <div class="label">当前激活标签页</div>
+    <div id="tabTitle" class="val">获取中...</div>
+    <div id="tabUrl" class="val" style="color: #666; margin-top: 4px; font-size: 11px;"></div>
+  </div>
+
+  <div class="btn-group">
+    <button id="testReadBtn">⚡ 测试读取当前页</button>
+    <button id="reconnectBtn" class="btn-sec">🔄 重新连接</button>
+  </div>
+
+  <div class="btn-group">
+    <button id="cleanGroupBtn" class="btn-danger">🧹 清理 Agent 任务标签</button>
+  </div>
+
+  <div id="feedbackBox"></div>
+
+  <div class="tip">
+    终端运行 <code>node server.js doctor</code> 可进行全链路自检诊断
+  </div>
 
   <script src="popup.js"></script>
 </body>
