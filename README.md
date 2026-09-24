@@ -56,7 +56,7 @@
 
 ---
 
-## 🚀 极简三步上手指南 (v2.2.0)
+## 🚀 极简三步上手指南 (v2.3.0)
 
 ### 第一步：在 Chrome 中加载扩展
 
@@ -92,7 +92,7 @@ node server.js install windsurf        # 接入 Windsurf
 
 ### 第三步：全链路自检诊断 (Doctor)
 
-安装完成后，随时执行诊断命令验证全链路是否通畅：
+安装完成后，随时执行诊断命令验证全链路是否通畅（内置 CSRF 安全策略检验）：
 
 ```bash
 node server.js doctor
@@ -109,12 +109,13 @@ node server.js doctor --fix
 
 ### 1. OpenAI Function Calling 格式工具规范
 - **获取工具定义清单**：`GET http://127.0.0.1:18888/v1/tools`
-- **执行工具调用**：`POST http://127.0.0.1:18888/v1/tools/call`
-  ```json
-  {
-    "name": "browser_read",
-    "arguments": { "query": "Jira" }
-  }
+- **执行工具调用**：`POST http://127.0.0.1:18888/v1/tools/call`（支持携带本地 Token）
+  ```bash
+  TOKEN=$(cat .bridge_token)
+  curl -X POST http://127.0.0.1:18888/v1/tools/call \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"name":"browser_read","arguments":{"query":"Jira"}}'
   ```
   *任何 Python、LangChain、Dify 或自动化脚本均可直接发起 HTTP 请求调用，无需构建 MCP 客户端。*
 
@@ -145,22 +146,39 @@ node server.js open "https://github.com/trending"
 node server.js click "text=保存" "Jira"
 node server.js click "#submit-btn"
 
-# 5. 表单输入（自动触发 React/Vue 的 input 与 change 事件）
+# 5. 模拟鼠标悬停 (触发下拉列表、Tooltip 或悬浮卡片)
+node server.js hover ".nav-dropdown" "Jira"
+node server.js hover "text=用户中心"
+
+# 6. 表单输入（自动触发 React/Vue 的 input 与 change 事件）
 node server.js fill "#keyword" "BugFix" "Jira"
 
-# 6. 网页滚动 (down / up / top / bottom)
+# 7. 模拟按键（回车、Esc、Tab、方向键等）
+node server.js press Enter "#keyword" "Jira"
+node server.js press Escape
+
+# 8. 原生 <select> 下拉选项选择
+node server.js select "#status-select" "resolved" "Jira"
+
+# 9. 显式异步等待元素出现或变为可见
+node server.js wait ".issue-list" 5000 "Jira"
+
+# 10. 查看页面控制台错误与异常日志 (协助排查操作无响应)
+node server.js logs "Jira" error
+
+# 11. 网页滚动 (down / up / top / bottom)
 node server.js scroll down "Jira"
 
-# 7. 截取网页视口快照保存为本地 PNG 图片
+# 12. 截取网页视口快照保存为本地 PNG 图片
 node server.js shot "Jira" ./screenshot.png
 
-# 8. 在目标页面上下文中执行自定义 JavaScript
+# 13. 在目标页面上下文中执行自定义 JavaScript
 node server.js eval "document.title" "Jira"
 
-# 9. 关闭指定的标签页
+# 14. 关闭指定的标签页
 node server.js close "trending"
 
-# 10. 一键清理并关闭所有 Agent 任务分组中的后台临时标签页
+# 15. 一键清理并关闭所有 Agent 任务分组中的后台临时标签页
 node server.js clean
 ```
 
@@ -171,16 +189,22 @@ node server.js clean
 完成 MCP 注册后，您无需敲任何命令行，直接在 Claude 对话框中吩咐：
 
 - 🗣️ *“帮我看一眼我当前浏览器打开的工单页面，有哪些待办任务？”*
+- 🗣️ *“把鼠标悬停在用户头像上，展开下拉菜单并点击‘个人设置’”*
+- 🗣️ *“在搜索框输入关键词并按 Enter 回车键提交”*
+- 🗣️ *“查看一下当前页面的控制台有没有报错日志”*
 - 🗣️ *“读取一下监控看板当前展示的核心指标数据”*
-- 🗣️ *“帮我在打开的工单页面点击‘审核通过’按钮，把操作结果截个图给我”*
-- 🗣️ *“帮我查一下当前浏览器打开了哪些标签页”*
 - 🗣️ *“把刚才打开的 Agent 任务页面全部清理关闭”*
 
-Claude 会智能调用背后的工具集：
+Claude 会智能调用背后的 15 项工具集：
 - `browser_read`：模糊定位并结构化提取网页数据（含子 iframe、表格与关键链接）
 - `browser_list_tabs`：获取当前所有标签页清单
 - `browser_click`：点击指定选择器或文本按钮（支持 Pointer/Mouse 复合事件）
+- `browser_hover`：悬停鼠标触发浮层菜单
 - `browser_fill`：输入表单项（深度适配 React/Vue 受控组件）
+- `browser_press_key`：模拟键盘物理按键（Enter/Escape/Tab/快捷键）
+- `browser_select`：原生下拉选择
+- `browser_wait_for`：异步显式等待元素加载
+- `browser_get_console_logs`：获取控制台报错日志
 - `browser_screenshot`：网页截图存盘
 - `browser_navigate`：在专属「Agent 任务」分组中后台静默打开新链接
 - `browser_close_tab`：关闭指定标签页
@@ -192,13 +216,12 @@ Claude 会智能调用背后的工具集：
 ## 🛠️ 常见问题 (FAQ)
 
 ### 1. 扩展图标显示“🔴 未连接服务”？
-只需在终端运行一次 `node server.js list`，本地守护进程会自动在后台启动并监听 `127.0.0.1:18888`。然后点击扩展图标中的「🔄 重新连接 Bridge 服务」按钮即可。
+只需在终端运行一次 `node server.js list` 或 `node server.js doctor --fix`，本地守护进程会自动在后台启动并监听 `127.0.0.1:18888`。然后点击扩展图标中的「🔄 重新连接 Bridge 服务」按钮即可。
 
-### 2. 修改扩展源码后如何生效？
-Chrome 不会自动热重载本地未打包的扩展。若修改了 `extension/` 下的文件，请在 `chrome://extensions` 页面点击该扩展卡片右下角的 **「🔄 重新加载」** 按钮。
-
-### 3. 会泄露我的 Cookie 或隐私数据吗？
-本系统的 WebSocket 与 HTTP API **仅监听在本地回环地址 `127.0.0.1:18888`**，没有任何外部服务器或第三方数据收集逻辑，所有通信均在您本机的进程之间流转，安全可控。
+### 2. 本地通信安全吗？会有跨站攻击或 Cookie 泄露风险吗？
+* **Origin 来源守门 (Anti-CSRF)**：守护进程对所有通信均校验 `Origin`。仅允许本地 CLI/MCP 及 `chrome-extension://` 扩展内部访问；任何第三方网站发起的跨站请求会被即时拦截并拒绝（403 Forbidden）。
+* **会话令牌保护**：HTTP API 受本地生成的 `.bridge_token` 保护，彻底防御跨站代码执行。
+* **本地闭环**：所有数据均只在您本地回环地址 `127.0.0.1:18888` 流转，没有任何外部公网数据上报逻辑，安全可控。
 
 ---
 

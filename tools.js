@@ -162,6 +162,139 @@ const TOOLS = [
       type: 'object',
       properties: {}
     }
+  },
+  {
+    name: 'browser_press_key',
+    description: '在 Chrome 标签页中模拟按下特定物理按键或快捷键（支持 Enter、Escape、Tab、Backspace、Delete、方向键 ArrowUp/Down/Left/Right、Space 及组合修饰键）',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        key: {
+          type: 'string',
+          description: '按键名称（如 "Enter"、"Escape"、"Tab"、"ArrowDown"、"ArrowUp"、"Backspace"、"Space"）'
+        },
+        selector: {
+          type: 'string',
+          description: '目标元素 CSS 选择器或 text= 文本；若留空则向当前聚焦的元素派发'
+        },
+        modifiers: {
+          type: 'object',
+          properties: {
+            ctrlKey: { type: 'boolean', description: '是否按下 Ctrl 键' },
+            shiftKey: { type: 'boolean', description: '是否按下 Shift 键' },
+            altKey: { type: 'boolean', description: '是否按下 Alt 键' },
+            metaKey: { type: 'boolean', description: '是否按下 Command/Meta 键' }
+          },
+          description: '修饰键配置'
+        },
+        query: {
+          type: 'string',
+          description: '定位目标标签页的关键词或 URL，留空则针对当前激活标签页'
+        }
+      },
+      required: ['key']
+    }
+  },
+  {
+    name: 'browser_hover',
+    description: '在 Chrome 标签页中定位元素并触发鼠标/指针悬停（支持 CSS 选择器或 text= 文本，用于展开下拉菜单、悬浮卡片、Tooltip 提示）',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        selector: {
+          type: 'string',
+          description: '元素 CSS 选择器（如 ".nav-item"）或文本匹配（如 "text=更多操作"）'
+        },
+        query: {
+          type: 'string',
+          description: '定位目标标签页的关键词或 URL，留空则针对当前激活标签页'
+        }
+      },
+      required: ['selector']
+    }
+  },
+  {
+    name: 'browser_wait_for',
+    description: '等待页面中的指定元素出现、变为可见、隐藏或被销毁（内置 DOM 变动监听器与超时控制，用于异步加载页面）',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        selector: {
+          type: 'string',
+          description: '元素 CSS 选择器或 text= 文本'
+        },
+        state: {
+          type: 'string',
+          enum: ['visible', 'hidden', 'attached', 'detached'],
+          description: '目标状态：visible (可见, 默认), hidden (隐藏), attached (存在于DOM), detached (从DOM移除)'
+        },
+        timeout: {
+          type: 'number',
+          description: '超时时间（毫秒，默认 10000）'
+        },
+        query: {
+          type: 'string',
+          description: '定位目标标签页的关键词或 URL，留空则针对当前激活标签页'
+        }
+      },
+      required: ['selector']
+    }
+  },
+  {
+    name: 'browser_select',
+    description: '在 Chrome 标签页的原生 <select> 下拉列表中选择指定选项并触发 change 响应事件',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        selector: {
+          type: 'string',
+          description: '原生 <select> 元素的 CSS 选择器'
+        },
+        value: {
+          type: 'string',
+          description: '选项的 value 属性值'
+        },
+        label: {
+          type: 'string',
+          description: '选项的可见文本内容'
+        },
+        index: {
+          type: 'number',
+          description: '选项的序号索引（从 0 开始）'
+        },
+        query: {
+          type: 'string',
+          description: '定位目标标签页的关键词或 URL，留空则针对当前激活标签页'
+        }
+      },
+      required: ['selector']
+    }
+  },
+  {
+    name: 'browser_get_console_logs',
+    description: '获取 Chrome 标签页中捕获的控制台错误日志、未捕获异常及警告，用于排查页面操作失败原因',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        level: {
+          type: 'string',
+          enum: ['all', 'error', 'warn'],
+          description: '日志级别过滤：all (全部, 默认), error (仅错误与未捕获异常), warn (警告)'
+        },
+        clear: {
+          type: 'boolean',
+          description: '读取后是否清空已捕获日志缓存（默认 false）'
+        },
+        limit: {
+          type: 'number',
+          description: '返回的最大日志条数（默认 50）'
+        },
+        query: {
+          type: 'string',
+          description: '定位目标标签页的关键词或 URL，留空则针对当前激活标签页'
+        }
+      }
+    }
   }
 ];
 
@@ -262,6 +395,68 @@ async function executeTool(name, args = {}, helpers = {}) {
     case 'browser_clean_group': {
       const res = await callApi('clean');
       return { content: [{ type: 'text', text: JSON.stringify(res, null, 2) }] };
+    }
+
+    case 'browser_press_key': {
+      const res = await callApi('pressKey', {
+        key: args.key,
+        selector: args.selector || null,
+        modifiers: args.modifiers || {},
+        query: args.query || ''
+      });
+      return { content: [{ type: 'text', text: JSON.stringify(res, null, 2) }], isError: !res.success };
+    }
+
+    case 'browser_hover': {
+      const res = await callApi('hover', {
+        selector: args.selector,
+        query: args.query || ''
+      });
+      return { content: [{ type: 'text', text: JSON.stringify(res, null, 2) }], isError: !res.success };
+    }
+
+    case 'browser_wait_for': {
+      const res = await callApi('waitFor', {
+        selector: args.selector,
+        state: args.state || 'visible',
+        timeout: args.timeout || 10000,
+        query: args.query || ''
+      });
+      return { content: [{ type: 'text', text: JSON.stringify(res, null, 2) }], isError: !res.success };
+    }
+
+    case 'browser_select': {
+      const res = await callApi('selectOption', {
+        selector: args.selector,
+        value: args.value,
+        label: args.label,
+        index: args.index,
+        query: args.query || ''
+      });
+      return { content: [{ type: 'text', text: JSON.stringify(res, null, 2) }], isError: !res.success };
+    }
+
+    case 'browser_get_console_logs': {
+      const res = await callApi('getConsoleLogs', {
+        level: args.level || 'all',
+        clear: !!args.clear,
+        limit: args.limit || 50,
+        query: args.query || ''
+      });
+      if (res.logs && Array.isArray(res.logs)) {
+        let md = `### 页面控制台与异常日志 (${res.returnedCount || res.logs.length} 条)\n\n`;
+        if (res.logs.length === 0) {
+          md += '*(当前页面未捕获到控制台错误或警告)*\n';
+        } else {
+          res.logs.forEach((l, i) => {
+            md += `${i + 1}. **[${l.level.toUpperCase()}]** ${l.message}\n`;
+            if (l.stack) md += `   - Stack: \`${l.stack.replace(/\n/g, ' ')}\`\n`;
+            if (l.source) md += `   - Source: ${l.source}:${l.lineno}:${l.colno}\n`;
+          });
+        }
+        return { content: [{ type: 'text', text: md }] };
+      }
+      return { content: [{ type: 'text', text: JSON.stringify(res, null, 2) }], isError: !res.success };
     }
 
     default:

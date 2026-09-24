@@ -17,6 +17,65 @@ const { spawn } = require('child_process');
 
 const PORT = parseInt(process.env.BRIDGE_PORT || '18888', 10);
 const PID_FILE = path.join(__dirname, '.bridge_daemon.pid');
+const TOKEN_FILE = path.join(__dirname, '.bridge_token');
+
+// ==========================================
+// 0. 安全令牌与 Origin 校验体系
+// ==========================================
+
+function getOrCreateToken() {
+  if (process.env.BRIDGE_TOKEN) {
+    return process.env.BRIDGE_TOKEN.trim();
+  }
+  try {
+    if (fs.existsSync(TOKEN_FILE)) {
+      const t = fs.readFileSync(TOKEN_FILE, 'utf8').trim();
+      if (t && t.length >= 16) return t;
+    }
+  } catch (e) {}
+
+  const newToken = crypto.randomBytes(32).toString('hex');
+  try {
+    fs.writeFileSync(TOKEN_FILE, newToken, { mode: 0o600, encoding: 'utf8' });
+  } catch (err) {}
+  return newToken;
+}
+
+const BRIDGE_TOKEN = getOrCreateToken();
+
+function isAllowedOrigin(origin) {
+  if (!origin) return true; // 本地 CLI / Stdio MCP 子进程无 Origin 标头
+  if (origin.startsWith('chrome-extension://')) return true; // Chrome 扩展内部发起的请求
+  if (/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(origin)) return true; // 本地开发页面
+  return false;
+}
+
+function verifyAuth(req, parsedUrl) {
+  const origin = req.headers['origin'];
+  // Chrome 扩展自身的请求予以放行
+  if (origin && origin.startsWith('chrome-extension://')) {
+    return true;
+  }
+
+  const authHeader = req.headers['authorization'] || '';
+  let token = '';
+  if (authHeader.startsWith('Bearer ')) {
+    token = authHeader.slice(7).trim();
+  } else if (req.headers['x-bridge-token']) {
+    token = String(req.headers['x-bridge-token']).trim();
+  } else if (parsedUrl && parsedUrl.searchParams.has('token')) {
+    token = parsedUrl.searchParams.get('token').trim();
+  }
+
+  if (token && token.length === BRIDGE_TOKEN.length) {
+    try {
+      return crypto.timingSafeEqual(Buffer.from(token), Buffer.from(BRIDGE_TOKEN));
+    } catch (e) {
+      return false;
+    }
+  }
+  return false;
+}
 
 // ==========================================
 // 1. WebSocket 与 HTTP 桥接服务端
@@ -31,10 +90,24 @@ class BridgeServer {
     this.reqId = 1;
 
     this.server = http.createServer(async (req, res) => {
-      // 允许本地跨域与 OPTIONS 预检
-      res.setHeader('Access-Control-Allow-Origin', '*');
+      const reqOrigin = req.headers['origin'];
+
+      // 0. 安全守门：严禁不受信任的外部网页跨站访问本地 Bridge
+      if (reqOrigin && !isAllowedOrigin(reqOrigin)) {
+        res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ success: false, error: 'Forbidden: Invalid Origin' }));
+        return;
+      }
+
+      // 动态反射合法的跨域标头
+      if (reqOrigin) {
+        res.setHeader('Access-Control-Allow-Origin', reqOrigin);
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+      } else {
+        res.setHeader('Access-Control-Allow-Origin', '*');
+      }
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Bridge-Token');
 
       if (req.method === 'OPTIONS') {
         res.writeHead(204);
@@ -45,7 +118,7 @@ class BridgeServer {
       const parsedUrl = new URL(req.url, `http://127.0.0.1:${this.port}`);
       const pathname = parsedUrl.pathname;
 
-      // 1. 健康检查与客户端计数
+      // 1. 健康检查与客户端计数 (公开只读)
       if (pathname === '/ping') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
@@ -53,13 +126,20 @@ class BridgeServer {
           clients: this.clients.size,
           sseClients: this.sseSessions.size,
           pid: process.pid,
-          version: '2.2.0'
+          version: '2.3.0',
+          authRequired: true
         }));
         return;
       }
 
-      // 2. 核心 API 分发接口 (CLI / Stdio MCP 转发通道)
+      // 2. 核心 API 分发接口 (CLI / Stdio MCP 转发通道 - 需鉴权)
       if (pathname === '/api' && req.method === 'POST') {
+        if (!verifyAuth(req, parsedUrl)) {
+          res.writeHead(401, { 'Content-Type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify({ success: false, error: 'Unauthorized: missing or invalid bridge token' }));
+          return;
+        }
+
         let body = '';
         req.on('data', chunk => { body += chunk; });
         req.on('end', async () => {
@@ -79,15 +159,8 @@ class BridgeServer {
       // 3. 通用 HTTP REST 工具清单 (供非 MCP Agent / OpenAI Function Calling 调用)
       if (pathname === '/v1/tools' && req.method === 'GET') {
         try {
-          const { TOOLS } = require('./mcp');
-          const openaiTools = TOOLS.map(t => ({
-            type: 'function',
-            function: {
-              name: t.name,
-              description: t.description,
-              parameters: t.inputSchema
-            }
-          }));
+          const { TOOLS, getOpenAITools } = require('./tools');
+          const openaiTools = getOpenAITools();
           res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
           res.end(JSON.stringify({ tools: TOOLS, openai_tools: openaiTools }));
         } catch (err) {
@@ -97,13 +170,19 @@ class BridgeServer {
         return;
       }
 
-      // 4. 通用 HTTP REST 工具执行接口
+      // 4. 通用 HTTP REST 工具执行接口 (需鉴权)
       if ((pathname === '/v1/tools/call' || pathname.startsWith('/v1/tools/')) && req.method === 'POST') {
+        if (!verifyAuth(req, parsedUrl)) {
+          res.writeHead(401, { 'Content-Type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify({ success: false, error: 'Unauthorized: missing or invalid bridge token' }));
+          return;
+        }
+
         let body = '';
         req.on('data', chunk => { body += chunk; });
         req.on('end', async () => {
           try {
-            const { handleToolCall } = require('./mcp');
+            const { executeTool } = require('./tools');
             const data = JSON.parse(body || '{}');
             let toolName = data.name || data.tool;
             if (!toolName && pathname.startsWith('/v1/tools/') && pathname !== '/v1/tools/call') {
@@ -117,7 +196,9 @@ class BridgeServer {
               return;
             }
 
-            const toolResult = await handleToolCall(toolName, toolArgs);
+            const toolResult = await executeTool(toolName, toolArgs, {
+              callApi: (act, pms, to) => this.sendCommand(act, pms, to)
+            });
             res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
             res.end(JSON.stringify({ success: !toolResult.isError, result: toolResult }));
           } catch (err) {
@@ -128,17 +209,23 @@ class BridgeServer {
         return;
       }
 
-      // 5. MCP Server-Sent Events (SSE) 协议通道
+      // 5. MCP Server-Sent Events (SSE) 协议通道 (需鉴权)
       if (pathname === '/sse' && req.method === 'GET') {
+        if (!verifyAuth(req, parsedUrl)) {
+          res.writeHead(401, { 'Content-Type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify({ success: false, error: 'Unauthorized: missing or invalid bridge token' }));
+          return;
+        }
+
         const sessionId = crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(16).toString('hex');
         res.writeHead(200, {
           'Content-Type': 'text/event-stream',
           'Cache-Control': 'no-cache',
           'Connection': 'keep-alive',
-          'Access-Control-Allow-Origin': '*'
+          'Access-Control-Allow-Origin': reqOrigin || '*'
         });
 
-        res.write(`event: endpoint\ndata: /message?sessionId=${sessionId}\n\n`);
+        res.write(`event: endpoint\ndata: /message?sessionId=${sessionId}&token=${BRIDGE_TOKEN}\n\n`);
         this.sseSessions.set(sessionId, res);
 
         req.on('close', () => {
@@ -147,8 +234,14 @@ class BridgeServer {
         return;
       }
 
-      // 6. MCP SSE 客户端消息接收通道
+      // 6. MCP SSE 客户端消息接收通道 (需鉴权)
       if (pathname === '/message' && req.method === 'POST') {
+        if (!verifyAuth(req, parsedUrl)) {
+          res.writeHead(401, { 'Content-Type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify({ success: false, error: 'Unauthorized: missing or invalid bridge token' }));
+          return;
+        }
+
         const sessionId = parsedUrl.searchParams.get('sessionId');
         const sseRes = this.sseSessions.get(sessionId);
 
@@ -177,6 +270,13 @@ class BridgeServer {
 
     // 处理 WebSocket 协议升级握手
     this.server.on('upgrade', (req, socket, head) => {
+      const origin = req.headers['origin'];
+      if (origin && !isAllowedOrigin(origin)) {
+        socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+
       const key = req.headers['sec-websocket-key'];
       if (!key) {
         socket.destroy();
@@ -473,7 +573,8 @@ function callApi(action, params = {}, timeout = 25000) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(postData)
+        'Content-Length': Buffer.byteLength(postData),
+        'Authorization': `Bearer ${BRIDGE_TOKEN}`
       },
       timeout
     }, (res) => {
@@ -695,22 +796,103 @@ async function runCli() {
         break;
       }
 
+      case 'press':
+      case 'key': {
+        const key = args[1];
+        const selector = args[2] && !args[2].startsWith('--') ? args[2] : null;
+        const query = args[3] || '';
+        if (!key) {
+          console.error('用法: node server.js press <按键名称> [selector] [页面关键词]');
+          process.exit(1);
+        }
+        const res = await callApi('pressKey', { key, selector, query });
+        console.log(JSON.stringify(res, null, 2));
+        break;
+      }
+
+      case 'hover': {
+        const selector = args[1];
+        const query = args[2] || '';
+        if (!selector) {
+          console.error('用法: node server.js hover <selector或文本> [页面关键词]');
+          process.exit(1);
+        }
+        const res = await callApi('hover', { selector, query });
+        console.log(JSON.stringify(res, null, 2));
+        break;
+      }
+
+      case 'wait':
+      case 'wait-for': {
+        const selector = args[1];
+        const timeout = args[2] && !isNaN(args[2]) ? parseInt(args[2], 10) : 10000;
+        const query = args[3] || '';
+        if (!selector) {
+          console.error('用法: node server.js wait <selector或文本> [超时毫秒] [页面关键词]');
+          process.exit(1);
+        }
+        const res = await callApi('waitFor', { selector, timeout, state: 'visible', query });
+        console.log(JSON.stringify(res, null, 2));
+        break;
+      }
+
+      case 'select': {
+        const selector = args[1];
+        const valueOrLabel = args[2];
+        const query = args[3] || '';
+        if (!selector || valueOrLabel === undefined) {
+          console.error('用法: node server.js select <selector> <值或选项文本> [页面关键词]');
+          process.exit(1);
+        }
+        const res = await callApi('selectOption', { selector, value: valueOrLabel, label: valueOrLabel, query });
+        console.log(JSON.stringify(res, null, 2));
+        break;
+      }
+
+      case 'logs':
+      case 'console': {
+        const query = args[1] || '';
+        const level = args[2] || 'all';
+        const res = await callApi('getConsoleLogs', { query, level, clear: false, limit: 100 });
+        if (res.logs && Array.isArray(res.logs)) {
+          console.log(`\n===== 捕获控制台日志 (${res.returnedCount || res.logs.length} 条) =====\n`);
+          if (res.logs.length === 0) {
+            console.log('（当前页面未捕获到控制台错误或警告）\n');
+          } else {
+            res.logs.forEach(l => {
+              const time = l.timestamp ? new Date(l.timestamp).toLocaleTimeString() : '';
+              console.log(`[${time}] [${l.level.toUpperCase()}] ${l.message}`);
+              if (l.stack) console.log(`   Stack: ${l.stack}`);
+            });
+            console.log('');
+          }
+        } else {
+          console.log(JSON.stringify(res, null, 2));
+        }
+        break;
+      }
+
       case 'help':
       default:
         console.log(`
-Agent Browser Bridge CLI (v2.2.0) - 类似 OpenAI Codex 的真实浏览器控制与读取
+Agent Browser Bridge CLI (v2.3.0) - 类似 OpenAI Codex 的真实浏览器控制与读取
 
 一键安装与自检:
   node server.js doctor                           🩺 全链路健康检查与状态诊断
   node server.js install [all|agent]              🚀 一键自动注册至各类 AI Agent (WorkBuddy/Claude/Cursor等)
   node server.js open-ext                         🧩 快捷打开 Chrome 扩展管理页与路径指引
 
-日常控制指令:
+日常控制与交互指令:
   node server.js list                             列出当前浏览器所有打开的标签页
   node server.js read [url或标题关键词]            智能匹配标签并读取 Markdown 内容 (含 iframe)
   node server.js open <URL>                       在专属「Agent 任务」分组中后台静默打开新页面
   node server.js click <selector或文本> [关键词]   在目标页面点击元素 (例如 text=确定 或 #btn)
+  node server.js hover <selector或文本> [关键词]   鼠标悬停展开下拉列表或 Tooltip 浮层
   node server.js fill <selector> <值> [关键词]     在目标页面的输入框填写内容
+  node server.js press <按键名> [selector] [关键词]模拟键盘按键 (Enter, Escape, Tab, 方向键等)
+  node server.js select <selector> <值> [关键词]   在原生 <select> 下拉列表中选择选项
+  node server.js wait <selector> [超时ms] [关键词] 等待页面异步元素出现或变为可见
+  node server.js logs [关键词] [级别]              查看页面控制台错误与未处理异常 (error/warn/all)
   node server.js scroll [down|up|top|bottom]      页面滚动
   node server.js shot [关键词] [输出图片路径]      截取目标网页快照保存为 PNG
   node server.js eval <js代码> [关键词]            在目标页面中执行 JavaScript
@@ -729,6 +911,8 @@ Agent Browser Bridge CLI (v2.2.0) - 类似 OpenAI Codex 的真实浏览器控制
 // 模块导出供 MCP Server 直接复用
 module.exports = {
   PORT,
+  BRIDGE_TOKEN,
+  getOrCreateToken,
   BridgeServer,
   ensureDaemon,
   callApi

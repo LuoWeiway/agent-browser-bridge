@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Agent Browser Bridge - 标准 Model Context Protocol (MCP) Stdio 服务端
- * 版本: 2.2.0
+ * 版本: 2.3.0
  * 零第三方依赖 (标准 JSON-RPC 2.0 stdio 协议)
  *
  * 为 Claude Code, WorkBuddy, Cursor 等 AI Agent 提供浏览器控制与页面提取能力
@@ -49,7 +49,7 @@ async function main() {
             },
             serverInfo: {
               name: 'agent-browser-bridge',
-              version: '2.2.0'
+              version: '2.3.0'
             }
           }
         });

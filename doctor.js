@@ -37,13 +37,15 @@ function pingBridge() {
 }
 
 function probeTabs() {
+  const { BRIDGE_TOKEN } = require('./server');
   return new Promise((resolve) => {
     const postData = JSON.stringify({ action: 'list', params: {}, timeout: 5000 });
     const req = http.request('http://127.0.0.1:18888/api', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(postData)
+        'Content-Length': Buffer.byteLength(postData),
+        'Authorization': `Bearer ${BRIDGE_TOKEN}`
       },
       timeout: 6000
     }, (res) => {
@@ -70,6 +72,21 @@ function probeTabs() {
   });
 }
 
+function checkSecurityOrigin() {
+  return new Promise((resolve) => {
+    const req = http.request('http://127.0.0.1:18888/ping', {
+      method: 'GET',
+      headers: { 'Origin': 'http://malicious-site.com' },
+      timeout: 2000
+    }, (res) => {
+      resolve(res.statusCode === 403);
+    });
+    req.on('error', () => resolve(false));
+    req.on('timeout', () => { req.destroy(); resolve(false); });
+    req.end();
+  });
+}
+
 async function runDoctor(options = {}) {
   const autoFix = !!options.fix;
   console.log(`\n======================================================`);
@@ -82,13 +99,28 @@ async function runDoctor(options = {}) {
   const nodeVer = process.version;
   const majorVer = parseInt(nodeVer.replace('v', '').split('.')[0], 10);
   if (majorVer >= 18) {
-    console.log(`✅ [1/5] Node.js 运行环境: ${nodeVer} (符合要求 >= 18)`);
+    console.log(`✅ [1/6] Node.js 运行环境: ${nodeVer} (符合要求 >= 18)`);
   } else {
-    console.log(`❌ [1/5] Node.js 运行环境: ${nodeVer} (建议升级至 Node.js 18+)`);
+    console.log(`❌ [1/6] Node.js 运行环境: ${nodeVer} (建议升级至 Node.js 18+)`);
     issues.push('请升级 Node.js 至 18 或更高版本以获得更佳的 WebSocket / Fetch 支持');
   }
 
-  // 2. 守护进程及端口检查
+  // 2. 本地安全令牌检查 (.bridge_token)
+  const tokenFile = path.join(__dirname, '.bridge_token');
+  let tokenReady = fs.existsSync(tokenFile);
+  if (!tokenReady && autoFix) {
+    try {
+      require('./server').getOrCreateToken();
+      tokenReady = fs.existsSync(tokenFile);
+    } catch (e) {}
+  }
+  if (tokenReady) {
+    console.log(`✅ [2/6] 安全防护体系: 已启用 (本地会话令牌已生成，CSRF 防护生效)`);
+  } else {
+    console.log(`⚠️ [2/6] 安全防护体系: 待就绪 (首次启动守护进程将自动生成 .bridge_token)`);
+  }
+
+  // 3. 守护进程及端口检查
   let pingRes = await pingBridge();
   if (!pingRes.ok && autoFix) {
     console.log(`🔧 [自愈] 正在后台启动守护进程...`);
@@ -101,32 +133,32 @@ async function runDoctor(options = {}) {
   if (pingRes.ok) {
     const clients = pingRes.data.clients || 0;
     const pid = pingRes.data.pid || '未知';
-    console.log(`✅ [2/5] Bridge 守护进程: 正在运行 (PID: ${pid}, 端口: 127.0.0.1:18888)`);
+    console.log(`✅ [3/6] Bridge 守护进程: 正在运行 (PID: ${pid}, 端口: 127.0.0.1:18888)`);
 
-    // 3. Chrome 扩展连接状态
+    // 4. Chrome 扩展连接状态
     if (clients > 0) {
-      console.log(`✅ [3/5] Chrome 扩展连接: 正常 (已连接 ${clients} 个客户端)`);
+      console.log(`✅ [4/6] Chrome 扩展连接: 正常 (已连接 ${clients} 个客户端)`);
 
-      // 4. 浏览器实时通信验证
+      // 5. 浏览器实时通信验证
       process.stdout.write(`   正在探测浏览器标签页... `);
       const probeRes = await probeTabs();
       if (probeRes.success && Array.isArray(probeRes.result)) {
         const tabs = probeRes.result;
         const activeTab = tabs.find(t => t.active);
         console.log(`成功通信！`);
-        console.log(`✅ [4/5] 浏览器页面数据: 实时获取成功 (共 ${tabs.length} 个标签页)`);
+        console.log(`✅ [5/6] 浏览器页面数据: 实时获取成功 (共 ${tabs.length} 个标签页)`);
         if (activeTab) {
           console.log(`   当前聚焦页面: "${activeTab.title || '(无标题)'}"`);
           console.log(`   URL: ${activeTab.url}`);
         }
       } else {
         console.log(`通信超时或异常: ${probeRes.error || '未响应'}`);
-        console.log(`⚠️ [4/5] 浏览器页面数据: 未能成功提取标签页`);
+        console.log(`⚠️ [5/6] 浏览器页面数据: 未能成功提取标签页`);
         issues.push('Chrome 扩展已连入但指令未正常响应，请点击扩展图标中的「🔄 重新加载」或重新启动 Chrome');
       }
     } else {
-      console.log(`❌ [3/5] Chrome 扩展连接: 未连接 (clients: 0)`);
-      console.log(`⚠️ [4/5] 浏览器页面数据: 跳过 (因扩展未连入)`);
+      console.log(`❌ [4/6] Chrome 扩展连接: 未连接 (clients: 0)`);
+      console.log(`⚠️ [5/6] 浏览器页面数据: 跳过 (因扩展未连入)`);
       issues.push(
         `Chrome 扩展尚未加载或休眠。\n` +
         `   👉 快捷方式: 运行 "node server.js open-ext" 可自动打开 Chrome 扩展管理页\n` +
@@ -135,16 +167,16 @@ async function runDoctor(options = {}) {
       );
     }
   } else {
-    console.log(`⚠️ [2/5] Bridge 守护进程: 未运行 (${pingRes.error})`);
-    console.log(`⚪ [3/5] Chrome 扩展连接: 无法检测 (守护进程未启动)`);
-    console.log(`⚪ [4/5] 浏览器页面数据: 跳过`);
+    console.log(`⚠️ [3/6] Bridge 守护进程: 未运行 (${pingRes.error})`);
+    console.log(`⚪ [4/6] Chrome 扩展连接: 无法检测 (守护进程未启动)`);
+    console.log(`⚪ [5/6] 浏览器页面数据: 跳过`);
     issues.push(
       `守护进程尚未启动。在终端中执行 "node server.js list" 即可自动在后台拉起，或执行 "node server.js doctor --fix"。`
     );
   }
 
-  // 5. AI Agent 集成状态扫描
-  console.log(`\n🔍 [5/5] AI Agent 集成状态扫描:`);
+  // 6. AI Agent 集成状态扫描
+  console.log(`\n🔍 [6/6] AI Agent 集成状态扫描:`);
   const targets = getAgentTargets();
   let configuredAgents = 0;
 

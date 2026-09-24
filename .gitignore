@@ -1,4 +1,5 @@
 .bridge_daemon.pid
+.bridge_token
 *.pid
 node_modules/
 *.log

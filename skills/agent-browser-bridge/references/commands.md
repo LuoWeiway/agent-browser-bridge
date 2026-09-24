@@ -94,6 +94,53 @@ node "$BRIDGE" click "#submit-btn"
 
 返回 `{ success, ... }`；失败时 `success: false`。
 
+### `hover <选择器或text=文本> [关键词]`
+
+```bash
+node "$BRIDGE" hover ".nav-dropdown" "看板"
+node "$BRIDGE" hover "text=用户中心"
+```
+
+触发 `pointerover`、`pointerenter`、`mouseover`、`mouseenter`、`mousemove`，展开动态二级菜单、Tooltip 浮层或表格操作按钮。
+
+### `press <按键名称> [selector] [关键词]`（别名 `key`）
+
+```bash
+node "$BRIDGE" press Enter "#search-input" "看板"    # 在输入框按回车提交
+node "$BRIDGE" press Escape                         # 按 Esc 关闭弹窗
+node "$BRIDGE" press Tab                            # 切换焦点
+node "$BRIDGE" press ArrowDown                      # 下箭头选择候选项
+```
+
+派发标准 `KeyboardEvent`（`keydown`, `keypress`, `keyup`），自动处理 input 表单提交与快捷键。
+
+### `select <selector> <值或选项文本> [关键词]`
+
+```bash
+node "$BRIDGE" select "#role-select" "admin" "用户管理"
+node "$BRIDGE" select "select[name=status]" "已完成"
+```
+
+在原生 `<select>` 标签中按 value、label 文本或序号选择目标 `<option>`，自动触发 `input` 与 `change` 响应事件（兼容 React 受控组件）。
+
+### `wait <selector或文本> [超时毫秒] [关键词]`（别名 `wait-for`）
+
+```bash
+node "$BRIDGE" wait "#table-row" 5000 "看板"
+node "$BRIDGE" wait "text=加载完成" 10000
+```
+
+基于 DOM 变动监听器与微步轮询，显式等待异步元素出现并变为可见，避免盲目重试或 sleep。
+
+### `logs [关键词] [日志级别]`（别名 `console`）
+
+```bash
+node "$BRIDGE" logs "看板" error          # 仅查看页面未捕获错误与未处理异常
+node "$BRIDGE" logs "" all               # 查看当前活动页全部控制台输出
+```
+
+提取目标标签页中的 JavaScript 错误日志、未捕获异常及网络资源加载失败信息，协助排查操作失败原因。
+
 ### `fill <选择器> <值> [关键词]`（别名 `type`）
 
 ```bash
@@ -149,14 +196,19 @@ node "$BRIDGE" clean
 node "$BRIDGE" --server
 ```
 
-## MCP 工具对照表
+## MCP 工具对照表 (共 15 个工具)
 
 | MCP 工具 | 等价 CLI | 必填参数 |
 |---|---|---|
 | `browser_read` | `read` | — （`query` 可选） |
 | `browser_list_tabs` | `list` | — |
 | `browser_click` | `click` | `selector` |
+| `browser_hover` | `hover` | `selector` |
 | `browser_fill` | `fill` | `selector`, `value` |
+| `browser_press_key` | `press` | `key` |
+| `browser_select` | `select` | `selector` |
+| `browser_wait_for` | `wait` | `selector` |
+| `browser_get_console_logs` | `logs` | — |
 | `browser_scroll` | `scroll` | — （`direction` 默认 down） |
 | `browser_screenshot` | `shot` | — （`outputPath` 可选） |
 | `browser_navigate` | `open` | `url` |
@@ -166,14 +218,14 @@ node "$BRIDGE" --server
 
 所有工具均支持可选参数 `query` 用于定位目标标签页。
 
-## HTTP REST & SSE 接口 (v2.2.0 多 Agent 通用接入)
+## HTTP REST & SSE 接口 (v2.3.0 安全认证与通用接入)
 
-守护进程在 `127.0.0.1:18888` 上提供多种通用接入协议：
+守护进程在 `127.0.0.1:18888` 上提供多种通用接入协议，支持本地会话令牌鉴权 (`Authorization: Bearer <token>`) 与跨站 Origin 防护：
 
-### 1. 健康检查与状态
+### 1. 健康检查与状态 (公开只读)
 
 ```bash
-curl http://127.0.0.1:18888/ping          # 返回 { status, clients, pid, version }
+curl http://127.0.0.1:18888/ping          # 返回 { status, clients, pid, version: "2.3.0", authRequired }
 ```
 
 ### 2. OpenAI Function Calling 规范工具列表
@@ -182,10 +234,12 @@ curl http://127.0.0.1:18888/ping          # 返回 { status, clients, pid, versi
 curl http://127.0.0.1:18888/v1/tools      # 返回 standard MCP tools 与 openai_tools 两种结构
 ```
 
-### 3. HTTP REST 工具直接调用 (Python / Dify / LangChain)
+### 3. HTTP REST 工具直接调用 (需携带本地 Token)
 
 ```bash
+TOKEN=$(cat .bridge_token)
 curl -X POST http://127.0.0.1:18888/v1/tools/call \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"name":"browser_read","arguments":{"query":"看板"}}'
 ```
@@ -193,8 +247,8 @@ curl -X POST http://127.0.0.1:18888/v1/tools/call \
 ### 4. 标准 MCP SSE 传输通道
 
 ```bash
-# 挂载端点: http://127.0.0.1:18888/sse
-# 接收端点: http://127.0.0.1:18888/message?sessionId=<sessionId>
+# 挂载端点: http://127.0.0.1:18888/sse?token=<TOKEN>
+# 接收端点: http://127.0.0.1:18888/message?sessionId=<sessionId>&token=<TOKEN>
 ```
 
 ### 5. 内部 JSON API 通道
